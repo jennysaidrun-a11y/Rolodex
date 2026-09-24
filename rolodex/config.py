@@ -30,6 +30,14 @@ CARDS_DIR = DATA_DIR / "cards"
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
 
+# Who does the reading and research:
+#   "claude-code": the app only saves card photos and queues scans; someone runs /analyze in
+#                  Claude Code on this computer to do the work (no API key needed).
+#   "api":         the app calls the Claude API itself, right away and on schedule.
+# Defaults to "api" when an ANTHROPIC_API_KEY is set, otherwise "claude-code".
+ANALYSIS = os.environ.get("ANALYSIS") or ("api" if os.environ.get("ANTHROPIC_API_KEY") else "claude-code")
+USE_API = ANALYSIS == "api"
+
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5")
 RECHECK_DAYS = int(os.environ.get("RECHECK_DAYS", "90"))
 # The app rechecks due suppliers on its own in the background; set to 0 to turn off

@@ -1,6 +1,7 @@
 """End-to-end tests of the web app with the Claude calls stubbed out (no API key or network needed)."""
 
 import io
+import json
 from datetime import date, timedelta
 
 import pytest
@@ -36,7 +37,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CARDS_DIR", tmp_path / "cards")
     monkeypatch.setattr(config, "APP_PASSWORD", "")
     monkeypatch.setattr(config, "AUTO_RECHECK", False)
-    monkeypatch.setattr(claude, "read_card", lambda front, back, cats: dict(CARD))
+    monkeypatch.setattr(config, "USE_API", True)
+    monkeypatch.setitem(app_module.templates.env.globals, "use_api", True)
+    monkeypatch.setattr(claude, "read_card", lambda photos, cats, kind="card": dict(CARD))
     monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: dict(RESEARCH))
     # Run queued research inline so the test can see the result.
     monkeypatch.setattr(recheck, "queue", lambda sid: (
@@ -139,7 +142,7 @@ def test_directory_for_ask_is_compact():
     s = {"id": 1, "company": "A", "status": "active", "categories": [], "contact_name": "", "phone": "",
          "email": "", "address": "", "summary": "", "profile": RESEARCH, "needs_attention": 0,
          "attention_note": "", "last_checked": None}
-    assert '"regulatory":["2026-03 Recall: Undeclared sesame"]' in claude._directory([s], {})
+    assert '"regulatory":["2026-03 Recall: Undeclared sesame"]' in claude.directory([s], {})
 
 
 def test_manual_scan_of_selected_suppliers(client, monkeypatch):
@@ -214,7 +217,7 @@ def test_old_database_gets_tag_columns(tmp_path, monkeypatch):
 
 def test_categories_filter_browse_and_manage(client, monkeypatch):
     seen = {}
-    def read_card(front, back, cats):
+    def read_card(photos, cats, kind="card"):
         seen["cats"] = cats
         return dict(CARD)
     monkeypatch.setattr(claude, "read_card", read_card)
@@ -257,3 +260,89 @@ def test_categories_filter_browse_and_manage(client, monkeypatch):
     assert db.category_names()[:2] == ["Sweeteners", "Flour & grains"]
     client.post("/categories", data={"name": "  Co-packers ", "description": "Contract bakeries"})
     assert db.category_names()[-1] == "Co-packers" and "Contract bakeries" in client.get("/categories").text
+
+
+def run_tasks(capsys, *args, stdin=None, monkeypatch=None):
+    """Run the Claude Code bridge CLI and return (exit_ok, parsed JSON output)."""
+    from rolodex import tasks
+    if stdin is not None:
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(stdin)))
+    try:
+        tasks.main(list(args))
+        ok = True
+    except SystemExit as e:
+        return False, json.loads(str(e.code)) if str(e.code).startswith("{") else str(e.code)
+    return ok, json.loads(capsys.readouterr().out)
+
+
+def test_claude_code_mode_cards_pamphlets_and_research(client, monkeypatch, capsys):
+    monkeypatch.setattr(config, "USE_API", False)
+    monkeypatch.setitem(app_module.templates.env.globals, "use_api", False)
+    monkeypatch.setattr(claude, "read_card", lambda *a, **k: pytest.fail("no API calls in Claude Code mode"))
+    monkeypatch.setattr(claude, "research", lambda *a, **k: pytest.fail("no API calls in Claude Code mode"))
+
+    # A card from the phone is only saved.
+    r = client.post("/add", data={"kind": "card"}, files={"front": ("f.jpg", photo(), "image/jpeg"),
+                                                         "back": ("b.jpg", photo(), "image/jpeg")}, follow_redirects=False)
+    sid = int(r.headers["location"].split("/")[2])
+    assert db.get_supplier(sid)["status"] == "unread"
+    assert "waiting to be read" in client.get(f"/supplier/{sid}").text
+    assert "Waiting for Claude Code: 1 card/pamphlet to read" in client.get("/").text
+    assert "Ask Claude" not in client.get("/").text
+
+    ok, pending = run_tasks(capsys, "list")
+    card_id = pending["read"][0]["card_id"]
+    assert pending["read"][0]["photos"] == 2 and pending["research"] == []
+    ok, shown = run_tasks(capsys, "show", "card", str(card_id))
+    assert len(shown["photos"]) == 2 and all(p.endswith(".jpg") for p in shown["photos"])
+    assert "Read this business card" in shown["instructions"]
+
+    # Bad JSON is refused with the reasons; good JSON is saved and queued for research.
+    ok, res = run_tasks(capsys, "save", "card", str(card_id), "-", stdin={"company": "X"}, monkeypatch=monkeypatch)
+    assert not ok and "$.contact_name: missing" in res["errors"]
+    ok, res = run_tasks(capsys, "save", "card", str(card_id), "-", stdin=CARD, monkeypatch=monkeypatch)
+    assert ok and res["next_step"] == f"show research {sid}"
+    s = db.get_supplier(sid)
+    assert s["company"] == "Midwest Flour Co" and s["status"] == "queued"
+
+    ok, pending = run_tasks(capsys, "list")
+    assert pending["read"] == [] and pending["research"][0]["supplier_id"] == sid
+    ok, shown = run_tasks(capsys, "show", "research", str(sid))
+    assert "Research this supplier" in shown["instructions"] and "tags" in shown["output_schema"]["properties"]
+    ok, res = run_tasks(capsys, "save", "research", str(sid), "-", stdin=RESEARCH, monkeypatch=monkeypatch)
+    assert ok and res["needs_attention"] is True
+    assert db.get_supplier(sid)["status"] == "active"
+
+    # A pamphlet added to that supplier later: several pages, read on the next run, then a rescan.
+    r = client.post("/add", data={"kind": "pamphlet", "supplier": str(sid)},
+                    files=[("pages", (f"p{i}.jpg", photo(), "image/jpeg")) for i in range(3)], follow_redirects=False)
+    assert r.headers["location"] == f"/supplier/{sid}"
+    ok, pending = run_tasks(capsys, "list")
+    assert pending["read"][0]["kind"] == "pamphlet" and pending["read"][0]["photos"] == 3
+    ok, shown = run_tasks(capsys, "show", "card", str(pending["read"][0]["card_id"]))
+    assert "pamphlet or brochure" in shown["instructions"]
+    ok, res = run_tasks(capsys, "save", "card", str(pending["read"][0]["card_id"]), "-",
+                        stdin=dict(CARD, company="Midwest Flour Company Inc", other_text="Min order 1 pallet"),
+                        monkeypatch=monkeypatch)
+    s = db.get_supplier(sid)
+    assert s["company"] == "Midwest Flour Co"                    # an earlier value isn't overwritten
+    assert s["status"] == "queued"                               # rescan with the new information
+    assert any(n["text"] == "From the pamphlet: Min order 1 pallet" for n in db.notes_for(sid))
+    page = client.get(f"/supplier/{sid}").text
+    assert "Pamphlet" in page and page.count('alt="pamphlet photo') == 3
+
+    ok, directory = run_tasks(capsys, "directory")
+    assert directory[0]["company"] == "Midwest Flour Co"
+    assert "need the Claude API" in client.post("/ask", data={"question": "flour?"}).text
+
+
+def test_pamphlet_read_by_api(client, monkeypatch):
+    seen = {}
+    def read_card(photos, cats, kind="card"):
+        seen.update(n=len(photos), kind=kind)
+        return dict(CARD)
+    monkeypatch.setattr(claude, "read_card", read_card)
+    r = client.post("/add", data={"kind": "pamphlet"},
+                    files=[("pages", (f"p{i}.jpg", photo(), "image/jpeg")) for i in range(2)], follow_redirects=False)
+    assert seen == {"n": 2, "kind": "pamphlet"} and "/edit?new=1" in r.headers["location"]
+    assert client.post("/add", data={"kind": "pamphlet"}).status_code == 400

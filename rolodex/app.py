@@ -29,6 +29,7 @@ templates = Jinja2Templates(directory=HERE / "templates")
 # Link that drops one filter (e.g. a tag or category pill's ✕) and keeps the rest.
 templates.env.globals["without"] = lambda request, key, value: "/?" + urlencode(
     [(k, v) for k, v in request.query_params.multi_items() if not (k == key and v == value)])
+templates.env.globals["use_api"] = config.USE_API
 templates.env.filters["link"] = lambda u: u if str(u).lower().startswith(("http://", "https://")) else ""
 
 
@@ -36,7 +37,7 @@ templates.env.filters["link"] = lambda u: u if str(u).lower().startswith(("http:
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO)
     db.init()
-    if config.AUTO_RECHECK:
+    if config.USE_API and config.AUTO_RECHECK:
         recheck.start_background()
     yield
 
@@ -90,11 +91,16 @@ def home(request: Request, q: str = "", category: list[str] = Query([]), attenti
                 selected_categories=category, attention=attention, categories=db.category_list(),
                 selected_tags=tag, tag_counts=db.tag_counts(),
                 filtering=bool(q or category or attention or tag),
+                waiting_cards=len(db.unread_cards()), waiting_scans=len(db.due_for_recheck()),
                 attention_count=len(db.search(attention=True)), total=len(db.all_suppliers()))
 
 
 @app.post("/ask")
 async def ask(request: Request, question: str = Form(...)):
+    if not config.USE_API:
+        return page(request, "ask.html", question=question, answer="", matches=[],
+                    error="Plain-English questions need the Claude API, which isn't set up yet. For now, ask in "
+                          "Claude Code with /find-supplier, or use the keyword, category and tag filters.")
     suppliers = db.all_suppliers()
     by_id = {s["id"]: s for s in suppliers}
     notes = {s["id"]: [n["text"] for n in db.notes_for(s["id"])] for s in suppliers}
@@ -123,26 +129,45 @@ def _save_photo(upload: UploadFile) -> str:
 
 
 @app.get("/add")
-def add_form(request: Request):
-    return page(request, "add.html")
+def add_form(request: Request, supplier: int | None = None):
+    return page(request, "add.html", supplier=db.get_supplier(supplier) if supplier else None)
 
 
 @app.post("/add")
-async def add_card(request: Request, front: UploadFile = File(...), back: UploadFile | None = File(None)):
-    front_name = _save_photo(front)
-    back_name = _save_photo(back) if back and back.filename else None
+async def add_card(request: Request, kind: str = Form("card"), supplier: int | None = Form(None),
+                   front: UploadFile | None = File(None), back: UploadFile | None = File(None),
+                   pages: list[UploadFile] = File([])):
+    """A business card (front/back) or pamphlet (pages), for a new supplier or one already on file."""
+    kind = "pamphlet" if kind == "pamphlet" else "card"
+    uploads = [front, back] if kind == "card" else pages
+    uploads = [u for u in uploads if u is not None and u.filename]
+    if not uploads:
+        raise HTTPException(400, "Please add at least one photo.")
+    if len(uploads) > 20:
+        raise HTTPException(400, "That's a lot of pages; please add at most 20 photos at a time.")
+    existing = db.get_supplier(supplier) if supplier else None
+    photos = [_save_photo(u) for u in uploads]
+
+    if existing:
+        supplier_id = existing["id"]
+    else:
+        supplier_id = db.create_supplier({"company": recheck.PLACEHOLDER_COMPANY})
+        db.update_supplier(supplier_id, status="unread")
+    card_id = db.add_card(supplier_id, photos, kind)
+    if not config.USE_API:
+        return back_to(f"/supplier/{supplier_id}")   # Claude Code reads it on the next /analyze run
+
     try:
-        card = await run_in_threadpool(claude.read_card, config.CARDS_DIR / front_name,
-                                       config.CARDS_DIR / back_name if back_name else None, db.category_list())
+        reading = await run_in_threadpool(claude.read_card, [config.CARDS_DIR / p for p in photos],
+                                          db.category_list(), kind)
         error = ""
     except claude.ClaudeError as e:
-        card, error = {"company": "Unread card"}, f"Couldn't read the card automatically ({e}). Type it in below."
-    supplier_id = db.create_supplier(card)
-    db.add_card(supplier_id, front_name, back_name, card)
-    if card.get("other_text"):
-        db.add_note(supplier_id, f"From the card: {card['other_text']}", "card")
-    if card.get("products_mentioned"):
-        db.add_note(supplier_id, "Products on the card: " + ", ".join(card["products_mentioned"]), "card")
+        reading, error = {}, f"Couldn't read it automatically ({e}). Type the details in below."
+    recheck.save_reading(card_id, reading)
+    if existing:
+        recheck.queue(supplier_id)   # new information: refresh the profile
+        return back_to(f"/supplier/{supplier_id}")
+    db.update_supplier(supplier_id, status="new")   # staff check the details, then it gets researched
     return back_to(f"/supplier/{supplier_id}/edit?" + urlencode({"new": 1, "error": error}))
 
 
@@ -247,7 +272,7 @@ def scan_selected(ids: list[int] = Form([]), return_to: str = Form("/")):
     """Manual scan of the suppliers ticked on the list; unreviewed or already-running ones are skipped."""
     for supplier_id in ids:
         s = db.get_supplier(supplier_id)
-        if s and s["status"] not in ("new", "queued", "researching"):
+        if s and s["status"] not in ("unread", "new", "queued", "researching"):
             recheck.queue(supplier_id)
     return back_to(return_to if return_to.startswith("/") and not return_to.startswith("//") else "/")
 

@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block main %}
+{% if not use_api and (waiting_cards or waiting_scans) %}
+<p class="notice">Waiting for Claude Code: {% if waiting_cards %}{{ waiting_cards }} card/pamphlet{{ "s" if waiting_cards != 1 }} to read{% endif %}{% if waiting_cards and waiting_scans %}, {% endif %}{% if waiting_scans %}{{ waiting_scans }} supplier{{ "s" if waiting_scans != 1 }} to scan{% endif %}.
+  Run <strong>/analyze</strong> in Claude Code on the rolodex computer.</p>
+{% endif %}
+{% if use_api %}
 <section class="card">
   <h2>Ask Claude</h2>
   <form method="post" action="/ask" class="ask" onsubmit="this.querySelector('button').textContent='Thinking…'">
@@ -8,6 +13,7 @@
     <button class="btn">Ask</button>
   </form>
 </section>
+{% endif %}
 
 <section class="card">
   <form method="get" action="/" class="filters">
@@ -81,14 +87,15 @@
 <input type="hidden" name="return_to" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
 <ul class="list" id="supplier-list">
   {% for s in suppliers %}
-  {% set busy = s.status in ("new", "queued", "researching") %}
+  {% set busy = s.status in ("unread", "new", "queued", "researching") %}
   <li>
-    <label class="pick" title="{{ 'Review the card first' if s.status == 'new' else ('Already scanning' if busy else 'Select for scan') }}">
+    <label class="pick" title="{{ 'Not read yet' if s.status == 'unread' else ('Review the card first' if s.status == 'new' else ('Already queued' if busy else 'Select for scan')) }}">
       <input type="checkbox" name="ids" value="{{ s.id }}" {% if busy %}disabled{% endif %}></label>
     <a href="/supplier/{{ s.id }}">
       <strong>{{ s.company }}</strong>
       {% if s.needs_attention %}<span class="tag warn">Needs attention</span>{% endif %}
-      {% if s.status in ("queued", "researching") %}<span class="tag">Scanning…</span>{% endif %}
+      {% if s.status == "unread" %}<span class="tag">Not read yet</span>{% endif %}
+      {% if s.status in ("queued", "researching") %}<span class="tag">{{ "Scanning…" if use_api else "Waiting for scan" }}</span>{% endif %}
       {% if s.status == "closed" %}<span class="tag warn">Closed</span>{% endif %}
       {% if s.status == "new" %}<span class="tag">Not reviewed</span>{% endif %}
       <span class="muted">{{ s.categories|join(", ") }}{% if s.last_checked %} · scanned {{ s.last_checked[:10] }}{% endif %}</span>

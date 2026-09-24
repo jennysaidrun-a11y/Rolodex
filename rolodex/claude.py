@@ -138,17 +138,33 @@ def _image(path: Path) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}
 
 
-def read_card(front: Path, back: Path | None, categories: list[dict]) -> dict:
-    """Pull the contact details and what they sell off a business card (front and optional back)."""
-    content = [{"type": "text", "text": "Front of the card:"}, _image(front)]
-    if back:
-        content += [{"type": "text", "text": "Back of the card:"}, _image(back)]
-    content.append({"type": "text", "text": (
+def card_prompt(categories: list[dict], kind: str = "card") -> str:
+    """Instructions for reading a card or pamphlet; shared by the API path and the Claude Code workflow."""
+    if kind == "pamphlet":
+        return (
+            "These photos are the pages of a supplier's pamphlet or brochure, in order. Copy the company's "
+            "contact details exactly as printed (leave a field empty if it isn't there; don't guess); "
+            "contact_name/contact_title only if a specific rep is named. Pick every category that fits what "
+            "they sell to a bakery. products_mentioned: every product, product line or service shown, with "
+            "sizes/specs where given. other_text: a short summary of anything else useful to a buyer "
+            "(certifications, minimum orders, lead times, prices, service area, promotions with dates).\n\n"
+            + _category_guide(categories))
+    return (
         "Read this business card. Copy contact details exactly as printed (leave a field empty if it isn't on "
         "the card; don't guess). If there are several phone numbers, put the direct/mobile first and join "
         "them with ' / '. Pick every category that fits what the company sells to a bakery, list any "
         "products or services printed on the card, and put any other useful text (taglines, "
-        "certifications, handwritten notes) in other_text.\n\n" + _category_guide(categories))})
+        "certifications, handwritten notes) in other_text.\n\n" + _category_guide(categories))
+
+
+def read_card(photos: list[Path], categories: list[dict], kind: str = "card") -> dict:
+    """Pull contact details and what they sell off a business card (front, back) or pamphlet (pages)."""
+    content = []
+    for i, photo in enumerate(photos):
+        label = (["Front of the card:", "Back of the card:"][i] if kind == "card" and i < 2
+                 else f"Page {i + 1}:")
+        content += [{"type": "text", "text": label}, _image(photo)]
+    content.append({"type": "text", "text": card_prompt(categories, kind)})
     response = _create(
         max_tokens=4000,
         system=CONTEXT,
@@ -172,13 +188,13 @@ TAG_GUIDE = (
 )
 
 
-def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = None,
-             categories: list[dict] | None = None) -> dict:
-    """Look the supplier up on the web and return a fresh profile, noting what changed since last time."""
+def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | None = None,
+                    categories: list[dict] | None = None) -> str:
+    """Instructions for researching a supplier; shared by the API path and the Claude Code workflow."""
     known = {k: supplier[k] for k in ("company", "contact_name", "phone", "email", "website", "address",
                                       "categories")}
     previous = supplier.get("profile") or {}
-    prompt = (
+    return (
         f"Research this supplier for our rolodex.\n\nWhat we have on file:\n{json.dumps(known, indent=2)}\n\n"
         + (f"Our staff notes:\n" + "\n".join(f"- {n}" for n in notes) + "\n\n" if notes else "")
         + (f"Profile from the last check ({supplier.get('last_checked')}):\n{json.dumps(previous, indent=2)}\n\n"
@@ -206,7 +222,12 @@ def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = N
            "only for something none of them covers):\n"
            + "\n".join(f"- {t['group']}: {t['name']}" for t in vocabulary) if vocabulary else "")
     )
-    messages = [{"role": "user", "content": prompt}]
+
+
+def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = None,
+             categories: list[dict] | None = None) -> dict:
+    """Look the supplier up on the web and return a fresh profile, noting what changed since last time."""
+    messages = [{"role": "user", "content": research_prompt(supplier, notes, vocabulary, categories)}]
     for _ in range(6):   # web search can pause a long turn; resume it a few times
         response = _create(
             max_tokens=16000,
@@ -221,7 +242,7 @@ def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = N
     raise ClaudeError("Research took too long and was stopped.")
 
 
-def _directory(suppliers: list[dict], notes: dict[int, list[str]]) -> str:
+def directory(suppliers: list[dict], notes: dict[int, list[str]]) -> str:
     rows = []
     for s in suppliers:
         p = s["profile"]
@@ -251,7 +272,7 @@ def ask(question: str, suppliers: list[dict], notes: dict[int, list[str]]) -> di
                 "fit and say why in a sentence each; mention anything that argues against one (a recall, a "
                 "lapsed certification, out of area). If nothing on file fits, say so plainly and suggest "
                 "what kind of supplier to look for. Keep the answer short.")},
-            {"type": "text", "text": "Supplier directory (JSON):\n" + _directory(suppliers, notes),
+            {"type": "text", "text": "Supplier directory (JSON):\n" + directory(suppliers, notes),
              "cache_control": {"type": "ephemeral"}},
         ],
         messages=[{"role": "user", "content": question}],

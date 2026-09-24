@@ -12,7 +12,14 @@
     <a class="btn small ghost" href="/supplier/{{ s.id }}/edit">Edit</a>
   </div>
 
-  {% if s.status in ("queued", "researching") %}
+  {% set unread = cards|selectattr("read_at", "none")|list %}
+  {% if unread %}
+    <p class="notice">{{ unread|length }} photo set{{ "s" if unread|length > 1 }} waiting to be read.
+      {% if use_api %}Refresh in a moment.{% else %}Claude Code reads {{ "them" if unread|length > 1 else "it" }} and researches the company on the next <strong>/analyze</strong> run.
+      You can <a href="/supplier/{{ s.id }}/edit">type details in</a> now if you like.{% endif %}</p>
+  {% elif s.status == "queued" and not use_api %}
+    <p class="notice">Waiting to be scanned. Claude Code researches it on the next <strong>/analyze</strong> run.</p>
+  {% elif s.status in ("queued", "researching") %}
     <p class="notice">Claude is scanning this supplier. This takes a few minutes; refresh the page to see the result.</p>
   {% elif s.status == "error" %}
     <p class="error">The last research attempt failed: {{ s.research_error }} It will try again tomorrow,
@@ -39,7 +46,7 @@
     {% if s.last_checked %}Last checked {{ s.last_checked[:10] }} · next check {{ s.next_check }}{% else %}Not researched yet{% endif %}
   </p>
   <form method="post" action="/supplier/{{ s.id }}/recheck"><button class="btn small ghost"
-    {% if s.status in ("queued", "researching", "new") %}disabled{% endif %}>Scan now</button></form>
+    {% if s.status in ("unread", "queued", "researching", "new") %}disabled{% endif %}>Scan now</button></form>
 </section>
 
 {% if p %}
@@ -100,14 +107,18 @@
 </section>
 
 {% if cards %}
-<section class="card"><h2>Business cards</h2>
+<section class="card" id="photos"><div class="head"><h2>Cards &amp; pamphlets</h2>
+  <a class="btn small ghost" href="/add?supplier={{ s.id }}">+ Add</a></div>
+  {% for c in cards %}
+  <p class="muted">{{ "Pamphlet" if c.kind == "pamphlet" else "Business card" }} · added {{ c.created_at[:10] }}{% if not c.read_at %} · <strong>not read yet</strong>{% endif %}</p>
   <div class="cards">
-    {% for c in cards %}
-      <a href="/cards/{{ c.front }}" target="_blank"><img src="/cards/{{ c.front }}" alt="Card front"></a>
-      {% if c.back %}<a href="/cards/{{ c.back }}" target="_blank"><img src="/cards/{{ c.back }}" alt="Card back"></a>{% endif %}
-    {% endfor %}
+    {% for p in c.photos %}<a href="/cards/{{ p }}" target="_blank"><img src="/cards/{{ p }}" alt="{{ c.kind }} photo {{ loop.index }}" loading="lazy"></a>{% endfor %}
   </div>
+  {% endfor %}
 </section>
+{% else %}
+<section class="card"><div class="head"><h2>Cards &amp; pamphlets</h2>
+  <a class="btn small ghost" href="/add?supplier={{ s.id }}">+ Add</a></div></section>
 {% endif %}
 
 {% if checks %}

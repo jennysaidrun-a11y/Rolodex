@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
     removed_tags TEXT DEFAULT '[]',     -- JSON [name] research tags staff removed; stay removed
     summary TEXT DEFAULT '',            -- one-paragraph "what they do for a bakery"
     profile TEXT DEFAULT '{}',          -- JSON from the latest research check
-    status TEXT DEFAULT 'new',          -- new | researching | active | closed | error
+    status TEXT DEFAULT 'new',          -- unread | new | queued | researching | active | closed | error
     needs_attention INTEGER DEFAULT 0,  -- 1 when a check found something to look at
     attention_note TEXT DEFAULT '',
     research_error TEXT DEFAULT '',
@@ -42,9 +42,12 @@ CREATE TABLE IF NOT EXISTS category_list (
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY,
     supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
-    front TEXT NOT NULL,
-    back TEXT,
-    raw TEXT DEFAULT '{}',              -- what Claude read off the card
+    front TEXT NOT NULL,                -- first photo
+    back TEXT,                          -- back of a card (older rows)
+    pages TEXT DEFAULT '[]',            -- JSON list of further photos (card back, pamphlet pages)
+    kind TEXT DEFAULT 'card',           -- card | pamphlet
+    raw TEXT DEFAULT '{}',              -- what Claude read off it
+    read_at TEXT,                       -- NULL until Claude has read it
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS checks (
@@ -88,7 +91,10 @@ DEFAULT_CATEGORIES = [
 
 TAG_GROUPS = ["Product", "Certification", "Capability", "Service area", "Other"]
 # Columns added after the first release; init() adds them to an existing database.
-_ADDED_COLUMNS = {"tags": "TEXT DEFAULT '[]'", "staff_tags": "TEXT DEFAULT '[]'", "removed_tags": "TEXT DEFAULT '[]'"}
+_ADDED_COLUMNS = {
+    "suppliers": {"tags": "TEXT DEFAULT '[]'", "staff_tags": "TEXT DEFAULT '[]'", "removed_tags": "TEXT DEFAULT '[]'"},
+    "cards": {"pages": "TEXT DEFAULT '[]'", "kind": "TEXT DEFAULT 'card'", "read_at": "TEXT"},
+}
 
 EDITABLE = ("company", "contact_name", "contact_title", "phone", "email", "website", "address",
             "categories", "summary")
@@ -118,10 +124,13 @@ def init() -> None:
         if not conn.execute("SELECT 1 FROM category_list LIMIT 1").fetchone():
             conn.executemany("INSERT INTO category_list (name, description, position) VALUES (?, ?, ?)",
                              [(n, d, i) for i, (n, d) in enumerate(DEFAULT_CATEGORIES)])
-        have = {r["name"] for r in conn.execute("PRAGMA table_info(suppliers)")}
-        for col, decl in _ADDED_COLUMNS.items():
-            if col not in have:
-                conn.execute(f"ALTER TABLE suppliers ADD COLUMN {col} {decl}")
+        for table, cols in _ADDED_COLUMNS.items():
+            have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for col, decl in cols.items():
+                if col not in have:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+                    if (table, col) == ("cards", "read_at"):   # cards from before were read on upload
+                        conn.execute("UPDATE cards SET read_at = created_at")
         # A research run cut off by a restart would otherwise stay "researching" forever.
         conn.execute("UPDATE suppliers SET status = 'queued' WHERE status = 'researching'")
 
@@ -163,8 +172,8 @@ def update_supplier(supplier_id: int, **fields) -> None:
 def delete_supplier(supplier_id: int) -> list[str]:
     """Delete a supplier; returns the card photo file names so the caller can remove them."""
     with connect() as conn:
-        files = [f for c in conn.execute("SELECT front, back FROM cards WHERE supplier_id = ?", (supplier_id,))
-                 for f in (c["front"], c["back"]) if f]
+        files = [f for c in conn.execute("SELECT * FROM cards WHERE supplier_id = ?", (supplier_id,))
+                 for f in _card(c)["photos"]]
         conn.execute("DELETE FROM suppliers WHERE id = ?", (supplier_id,))
     return files
 
@@ -348,16 +357,45 @@ def possible_duplicates(company: str, website: str = "", email: str = "", exclud
     return out
 
 
-def add_card(supplier_id: int, front: str, back: str | None, raw: dict) -> None:
+def _card(row: sqlite3.Row) -> dict:
+    c = dict(row)
+    c["pages"] = json.loads(c.get("pages") or "[]")
+    c["raw"] = json.loads(c.get("raw") or "{}")
+    c["photos"] = [p for p in [c["front"], c["back"], *c["pages"]] if p]
+    return c
+
+
+def add_card(supplier_id: int, photos: list[str], kind: str = "card", raw: dict | None = None) -> int:
+    """Store a business card or pamphlet (its photos in order). Unread until raw is given."""
     with connect() as conn:
-        conn.execute("INSERT INTO cards (supplier_id, front, back, raw, created_at) VALUES (?, ?, ?, ?, ?)",
-                     (supplier_id, front, back, json.dumps(raw), now()))
+        cur = conn.execute(
+            "INSERT INTO cards (supplier_id, front, pages, kind, raw, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (supplier_id, photos[0], json.dumps(photos[1:]), kind, json.dumps(raw or {}),
+             now() if raw is not None else None, now()))
+        return cur.lastrowid
+
+
+def mark_card_read(card_id: int, raw: dict) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE cards SET raw = ?, read_at = ? WHERE id = ?", (json.dumps(raw), now(), card_id))
+
+
+def get_card(card_id: int) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM cards WHERE id = ?", (card_id,)).fetchone()
+    return _card(row) if row else None
+
+
+def unread_cards() -> list[dict]:
+    """Cards and pamphlets waiting to be read, oldest first."""
+    with connect() as conn:
+        return [_card(r) for r in conn.execute("SELECT * FROM cards WHERE read_at IS NULL ORDER BY id")]
 
 
 def cards_for(supplier_id: int) -> list[dict]:
     with connect() as conn:
-        return [dict(r) for r in conn.execute(
-            "SELECT * FROM cards WHERE supplier_id = ? ORDER BY created_at DESC", (supplier_id,))]
+        return [_card(r) for r in conn.execute(
+            "SELECT * FROM cards WHERE supplier_id = ? ORDER BY id DESC", (supplier_id,))]
 
 
 def add_note(supplier_id: int, text: str, author: str = "") -> None:
@@ -410,6 +448,6 @@ def due_for_recheck() -> list[dict]:
     today = datetime.now().date().isoformat()
     with connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM suppliers WHERE status NOT IN ('new', 'researching') "
+            "SELECT * FROM suppliers WHERE status NOT IN ('unread', 'new', 'researching') "
             "AND next_check IS NOT NULL AND next_check <= ? ORDER BY next_check, id", (today,))
         return [_supplier(r) for r in rows]

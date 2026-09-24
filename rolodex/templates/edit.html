@@ -12,10 +12,9 @@
   {% endif %}
   {% if cards %}
   <div class="cards">
-    {% for c in cards[:1] %}
-      <a href="/cards/{{ c.front }}" target="_blank"><img src="/cards/{{ c.front }}" alt="Card front"></a>
-      {% if c.back %}<a href="/cards/{{ c.back }}" target="_blank"><img src="/cards/{{ c.back }}" alt="Card back"></a>{% endif %}
-    {% endfor %}
+    {% for c in cards[:1] %}{% for p in c.photos %}
+      <a href="/cards/{{ p }}" target="_blank"><img src="/cards/{{ p }}" alt="Photo {{ loop.index }}"></a>
+    {% endfor %}{% endfor %}
   </div>
   {% endif %}
   <form method="post" action="/supplier/{{ s.id }}/edit" class="grid">
