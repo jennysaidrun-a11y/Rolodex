@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS suppliers (
     last_checked TEXT,
     next_check TEXT
 );
+CREATE TABLE IF NOT EXISTS category_list (
+    name TEXT PRIMARY KEY COLLATE NOCASE,
+    description TEXT DEFAULT '',        -- what belongs here; Claude reads it when categorizing
+    position INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY,
     supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
@@ -57,6 +62,29 @@ CREATE TABLE IF NOT EXISTS notes (
     text TEXT NOT NULL
 );
 """
+
+DEFAULT_CATEGORIES = [
+    ("Flour & grains", "Flour, grains, meals, starches"),
+    ("Sweeteners", "Sugar, syrups, honey, sugar substitutes"),
+    ("Dairy & eggs", "Milk, butter, cheese, egg products"),
+    ("Fats & oils", "Shortening, oils, margarine, release agents"),
+    ("Yeast & cultures", "Yeast, sourdough cultures, enzymes, dough conditioners"),
+    ("Other ingredients", "Seeds, inclusions, flavors, spices, fillings, toppings"),
+    ("Packaging", "Bags, film, boxes, trays, twist ties, clips"),
+    ("Labels & printing", "Labels, printed packaging, coding and date printers"),
+    ("Sanitation & chemicals", "Cleaning chemicals, CIP, sanitation tools and services"),
+    ("Pest control", "Pest management services and supplies"),
+    ("Equipment", "Mixers, ovens, dividers, slicers, conveyors, packaging machines"),
+    ("Parts & maintenance", "Spare parts, belting, bearings, repair services"),
+    ("Pallets & warehouse supplies", "Pallets, stretch wrap, racking, forklifts"),
+    ("Freight & logistics", "Trucking, LTL, cold chain, warehousing"),
+    ("Uniforms & PPE", "Uniforms, gloves, hairnets, safety gear"),
+    ("Food safety & lab testing", "Testing labs, auditors, certification bodies, consultants"),
+    ("Utilities & energy", "Gas, electric, water treatment, compressed air"),
+    ("Staffing", "Temp and permanent staffing agencies"),
+    ("IT & software", "ERP, scheduling, networks, scales and data systems"),
+    ("Other services", "Anything else"),
+]
 
 TAG_GROUPS = ["Product", "Certification", "Capability", "Service area", "Other"]
 # Columns added after the first release; init() adds them to an existing database.
@@ -87,6 +115,9 @@ def init() -> None:
     config.CARDS_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(SCHEMA)
+        if not conn.execute("SELECT 1 FROM category_list LIMIT 1").fetchone():
+            conn.executemany("INSERT INTO category_list (name, description, position) VALUES (?, ?, ?)",
+                             [(n, d, i) for i, (n, d) in enumerate(DEFAULT_CATEGORIES)])
         have = {r["name"] for r in conn.execute("PRAGMA table_info(suppliers)")}
         for col, decl in _ADDED_COLUMNS.items():
             if col not in have:
@@ -156,10 +187,12 @@ def _haystack(s: dict, notes: list[str]) -> str:
     return " ".join(parts).lower()
 
 
-def search(q: str = "", category: str = "", attention: bool = False, tags: list[str] | None = None) -> list[dict]:
-    """Keyword search (every word must appear in the profile or notes), narrowed by category,
-    the needs-attention flag and tags (a supplier must have every selected tag)."""
+def search(q: str = "", categories: list[str] | None = None, attention: bool = False,
+           tags: list[str] | None = None) -> list[dict]:
+    """Keyword search (every word must appear in the profile or notes), narrowed by categories
+    (a supplier in ANY selected category), the needs-attention flag and tags (must have EVERY tag)."""
     wanted = {t.lower() for t in tags or []}
+    cats = {c.lower() for c in categories or []}
     suppliers = all_suppliers()
     with connect() as conn:
         notes: dict[int, list[str]] = {}
@@ -168,7 +201,7 @@ def search(q: str = "", category: str = "", attention: bool = False, tags: list[
     words = [w for w in re.split(r"\s+", q.lower().strip()) if w]
     out = []
     for s in suppliers:
-        if category and category not in s["categories"]:
+        if cats and not cats & {c.lower() for c in s["categories"]}:
             continue
         if attention and not s["needs_attention"]:
             continue
@@ -180,8 +213,73 @@ def search(q: str = "", category: str = "", attention: bool = False, tags: list[
     return out
 
 
-def categories() -> list[str]:
-    return sorted({c for s in all_suppliers() for c in s["categories"]}, key=str.lower)
+def category_list() -> list[dict]:
+    """The managed category list, in display order: [{name, description, count}]."""
+    counts: dict[str, int] = {}
+    for s in all_suppliers():
+        for c in s["categories"]:
+            counts[c.lower()] = counts.get(c.lower(), 0) + 1
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute("SELECT name, description FROM category_list ORDER BY position, name")]
+    for r in rows:
+        r["count"] = counts.get(r["name"].lower(), 0)
+    return rows
+
+
+def category_names() -> list[str]:
+    return [c["name"] for c in category_list()]
+
+
+def add_category(name: str, description: str = "") -> str:
+    """Add to the list (no-op if it exists, any case); returns the name as stored."""
+    name = re.sub(r"\s+", " ", name).strip()[:60]
+    with connect() as conn:
+        row = conn.execute("SELECT name FROM category_list WHERE name = ?", (name,)).fetchone()
+        if row:
+            return row["name"]
+        pos = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM category_list").fetchone()[0]
+        conn.execute("INSERT INTO category_list (name, description, position) VALUES (?, ?, ?)",
+                     (name, description.strip(), pos))
+    return name
+
+
+def _replace_in_suppliers(old: str, new: str | None) -> None:
+    for s in all_suppliers():
+        if any(c.lower() == old.lower() for c in s["categories"]):
+            cats = [new if c.lower() == old.lower() else c for c in s["categories"]]
+            update_supplier(s["id"], categories=list(dict.fromkeys(c for c in cats if c)))
+
+
+def update_category(old: str, new: str, description: str) -> None:
+    """Rename and/or re-describe; a rename carries over to every supplier. Renaming onto an
+    existing category merges the two."""
+    new = re.sub(r"\s+", " ", new).strip()[:60] or old
+    with connect() as conn:
+        clash = conn.execute("SELECT name FROM category_list WHERE name = ?", (new,)).fetchone()
+        if clash and clash["name"].lower() != old.lower():
+            conn.execute("DELETE FROM category_list WHERE name = ?", (old,))
+            new = clash["name"]
+        else:
+            conn.execute("UPDATE category_list SET name = ?, description = ? WHERE name = ?",
+                         (new, description.strip(), old))
+    _replace_in_suppliers(old, new)
+
+
+def delete_category(name: str) -> None:
+    """Remove from the list and from every supplier (the suppliers themselves stay)."""
+    with connect() as conn:
+        conn.execute("DELETE FROM category_list WHERE name = ?", (name,))
+    _replace_in_suppliers(name, None)
+
+
+def move_category(name: str, step: int) -> None:
+    names = category_names()
+    i = next((k for k, n in enumerate(names) if n.lower() == name.lower()), None)
+    if i is None or not 0 <= i + step < len(names):
+        return
+    names[i], names[i + step] = names[i + step], names[i]
+    with connect() as conn:
+        conn.executemany("UPDATE category_list SET position = ? WHERE name = ?", list(enumerate(names)))
 
 
 def effective_tags(s: dict) -> list[dict]:

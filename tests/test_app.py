@@ -36,8 +36,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CARDS_DIR", tmp_path / "cards")
     monkeypatch.setattr(config, "APP_PASSWORD", "")
     monkeypatch.setattr(config, "AUTO_RECHECK", False)
-    monkeypatch.setattr(claude, "read_card", lambda front, back: dict(CARD))
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None: dict(RESEARCH))
+    monkeypatch.setattr(claude, "read_card", lambda front, back, cats: dict(CARD))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: dict(RESEARCH))
     # Run queued research inline so the test can see the result.
     monkeypatch.setattr(recheck, "queue", lambda sid: (
         db.update_supplier(sid, status="queued", next_check=date.today().isoformat()), recheck.research_one(sid)))
@@ -104,12 +104,12 @@ def test_recheck_only_when_due(client, monkeypatch):
     assert db.due_for_recheck() == []                    # researched: next check in 90 days
     db.update_supplier(sid, next_check=date.today().isoformat())
     calls = []
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None: calls.append(s["id"]) or dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: calls.append(s["id"]) or dict(RESEARCH))
     assert recheck.run_due() == 1 and calls == [sid]
 
 
 def test_research_failure_is_shown_and_retried(client, monkeypatch):
-    def boom(s, notes, vocab=None):
+    def boom(s, notes, vocab=None, cats=None):
         raise claude.ClaudeError("The Anthropic API key is missing or wrong.")
     monkeypatch.setattr(claude, "research", boom)
     sid = add_card(client)
@@ -147,7 +147,7 @@ def test_manual_scan_of_selected_suppliers(client, monkeypatch):
     for sid in (a, b):
         client.post(f"/supplier/{sid}/edit", data={"company": f"Supplier {sid}"})
     calls = []
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None: calls.append(s["id"]) or dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: calls.append(s["id"]) or dict(RESEARCH))
 
     page = client.get("/").text
     assert 'id="select-toggle"' in page and 'action="/scan"' in page
@@ -168,7 +168,7 @@ def test_tags_from_research_filter_and_edit(client, monkeypatch):
 
     # The next supplier's research sees the existing tags and odd spellings snap to them.
     seen = {}
-    def research(s, notes, vocab=None):
+    def research(s, notes, vocab=None, cats=None):
         seen["vocab"] = vocab
         return dict(RESEARCH, tags=[{"group": "Product", "name": "bread bags"}, {"group": "Certification", "name": "sqf "}])
     monkeypatch.setattr(claude, "research", research)
@@ -188,7 +188,7 @@ def test_tags_from_research_filter_and_edit(client, monkeypatch):
     # Staff remove a research tag and add their own; a rescan doesn't undo that.
     client.post(f"/supplier/{flour}/edit", data={"company": "Midwest Flour Co", "keep_tags": ["SQF", "High-Gluten Flour"],
                                                  "new_tags": "Sample Received, preferred", "new_tag_group": "Other"})
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None: dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: dict(RESEARCH))
     client.post(f"/supplier/{flour}/recheck")
     tags = [t["name"] for t in db.get_supplier(flour)["all_tags"]]
     assert "Midwest" not in tags and {"Sample Received", "preferred", "SQF"} <= set(tags)
@@ -210,3 +210,50 @@ def test_old_database_gets_tag_columns(tmp_path, monkeypatch):
     conn.commit(); conn.close()
     db.init()
     assert db.all_suppliers()[0]["all_tags"] == []
+
+
+def test_categories_filter_browse_and_manage(client, monkeypatch):
+    seen = {}
+    def read_card(front, back, cats):
+        seen["cats"] = cats
+        return dict(CARD)
+    monkeypatch.setattr(claude, "read_card", read_card)
+    flour = add_card(client)
+    assert seen["cats"][0] == {"name": "Flour & grains", "description": "Flour, grains, meals, starches", "count": 0}
+
+    # First research may add categories; a typed-in category joins the managed list.
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: dict(RESEARCH, categories=["Other ingredients"]))
+    client.post(f"/supplier/{flour}/edit", data={"company": "Midwest Flour Co", "categories": ["Flour & grains"],
+                                                 "other_categories": "Nuts & seeds"})
+    assert db.get_supplier(flour)["categories"] == ["Flour & grains", "Nuts & seeds", "Other ingredients"]
+    assert "Nuts & seeds" in db.category_names()
+
+    # Staff remove one; a rescan doesn't bring it back.
+    client.post(f"/supplier/{flour}/edit", data={"company": "Midwest Flour Co", "categories": ["Flour & grains", "Nuts & seeds"]})
+    client.post(f"/supplier/{flour}/recheck")
+    assert db.get_supplier(flour)["categories"] == ["Flour & grains", "Nuts & seeds"]
+
+    bags = add_card(client)
+    client.post(f"/supplier/{bags}/edit", data={"company": "Bag Co", "website": "bagco.com", "categories": ["Packaging"]})
+
+    # Browse grid shows only categories in use; picking several categories matches ANY of them.
+    home = client.get("/").text
+    assert "Browse by category" in home and 'href="/?category=Packaging"' in home and "?category=Staffing" not in home
+    names = lambda cats: sorted(s["company"] for s in db.search(categories=cats))
+    assert names(["Packaging"]) == ["Bag Co"]
+    assert names(["Packaging", "Flour & grains"]) == ["Bag Co", "Midwest Flour Co"]
+    page = client.get("/?category=Packaging&category=Flour+%26+grains").text
+    assert "Categories (2 selected)" in page and "Browse by category" not in page
+    assert 'href="/?category=Flour+%26+grains"' in page    # the Packaging pill's ✕ keeps the other filter
+
+    # Manage: rename carries to suppliers, renaming onto an existing one merges, delete strips it.
+    client.post("/categories/update", data={"old": "Nuts & seeds", "name": "Seeds & nuts", "description": "Seeds"})
+    assert db.get_supplier(flour)["categories"] == ["Flour & grains", "Seeds & nuts"]
+    client.post("/categories/update", data={"old": "Seeds & nuts", "name": "flour & GRAINS", "description": ""})
+    assert db.get_supplier(flour)["categories"] == ["Flour & grains"] and "Seeds & nuts" not in db.category_names()
+    client.post("/categories/delete", data={"name": "Packaging"})
+    assert db.get_supplier(bags)["categories"] == ["Other ingredients"] and "Packaging" not in db.category_names()
+    client.post("/categories/move", data={"name": "Sweeteners", "step": -1})
+    assert db.category_names()[:2] == ["Sweeteners", "Flour & grains"]
+    client.post("/categories", data={"name": "  Co-packers ", "description": "Contract bakeries"})
+    assert db.category_names()[-1] == "Co-packers" and "Contract bakeries" in client.get("/categories").text

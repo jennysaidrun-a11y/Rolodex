@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Categories · Supplier Rolodex{% endblock %}
+{% block main %}
+<section class="card">
+  <h1>Categories</h1>
+  <p class="muted">The kinds of supplier the rolodex is sorted into. Claude picks from this list when it reads a card
+    and researches a supplier, using the description to decide what belongs where. Renaming a category renames it
+    on every supplier; renaming it to an existing category merges the two.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Add a category</h2>
+  <form method="post" action="/categories" class="cat-row">
+    <input name="name" placeholder="Name, e.g. Nuts & seeds" required>
+    <input name="description" placeholder="What belongs here (helps Claude sort suppliers)">
+    <button class="btn">Add</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>{{ categories|length }} categories</h2>
+  {% for c in categories %}
+  <div class="cat-item">
+    <form id="u{{ loop.index }}" method="post" action="/categories/update">
+      <input type="hidden" name="old" value="{{ c.name }}">
+    </form>
+    <div class="cat-row">
+      <label>Name <span class="muted">· <a href="/?category={{ c.name|urlencode }}">{{ c.count }} supplier{{ "s" if c.count != 1 }}</a></span>
+        <input form="u{{ loop.index }}" name="name" value="{{ c.name }}" required></label>
+      <label>Description <input form="u{{ loop.index }}" name="description" value="{{ c.description }}"></label>
+      <div class="actions">
+        <button form="u{{ loop.index }}" class="btn small">Save</button>
+        <form method="post" action="/categories/move"><input type="hidden" name="name" value="{{ c.name }}">
+          <input type="hidden" name="step" value="-1"><button class="btn small ghost" title="Move up" {% if loop.first %}disabled{% endif %}>↑</button></form>
+        <form method="post" action="/categories/move"><input type="hidden" name="name" value="{{ c.name }}">
+          <input type="hidden" name="step" value="1"><button class="btn small ghost" title="Move down" {% if loop.last %}disabled{% endif %}>↓</button></form>
+        <form method="post" action="/categories/delete"
+              onsubmit="return confirm('Delete this category?{% if c.count %} It will be removed from {{ c.count }} supplier(s); the suppliers stay.{% endif %}')">
+          <input type="hidden" name="name" value="{{ c.name }}"><button class="btn small danger-inline" title="Delete">Delete</button></form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

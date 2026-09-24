@@ -26,8 +26,9 @@ from . import claude, config, db, recheck
 HERE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=HERE / "templates")
 # Links come from web research: only ever render http(s) ones.
-templates.env.globals["without_tag"] = lambda request, tag: "/?" + urlencode(
-    [(k, v) for k, v in request.query_params.multi_items() if not (k == "tag" and v == tag)])
+# Link that drops one filter (e.g. a tag or category pill's ✕) and keeps the rest.
+templates.env.globals["without"] = lambda request, key, value: "/?" + urlencode(
+    [(k, v) for k, v in request.query_params.multi_items() if not (k == key and v == value)])
 templates.env.filters["link"] = lambda u: u if str(u).lower().startswith(("http://", "https://")) else ""
 
 
@@ -83,10 +84,12 @@ def login(request: Request, password: str = Form(...)):
 # ---------- browse / search / ask ----------
 
 @app.get("/")
-def home(request: Request, q: str = "", category: str = "", attention: bool = False,
+def home(request: Request, q: str = "", category: list[str] = Query([]), attention: bool = False,
          tag: list[str] = Query([])):
-    return page(request, "index.html", suppliers=db.search(q, category, attention, tag), q=q, category=category,
-                attention=attention, categories=db.categories(), selected_tags=tag, tag_counts=db.tag_counts(),
+    return page(request, "index.html", suppliers=db.search(q, category, attention, tag), q=q,
+                selected_categories=category, attention=attention, categories=db.category_list(),
+                selected_tags=tag, tag_counts=db.tag_counts(),
+                filtering=bool(q or category or attention or tag),
                 attention_count=len(db.search(attention=True)), total=len(db.all_suppliers()))
 
 
@@ -130,7 +133,7 @@ async def add_card(request: Request, front: UploadFile = File(...), back: Upload
     back_name = _save_photo(back) if back and back.filename else None
     try:
         card = await run_in_threadpool(claude.read_card, config.CARDS_DIR / front_name,
-                                       config.CARDS_DIR / back_name if back_name else None)
+                                       config.CARDS_DIR / back_name if back_name else None, db.category_list())
         error = ""
     except claude.ClaudeError as e:
         card, error = {"company": "Unread card"}, f"Couldn't read the card automatically ({e}). Type it in below."
@@ -163,7 +166,7 @@ def supplier(request: Request, supplier_id: int):
 def edit_form(request: Request, supplier_id: int, new: bool = False, error: str = ""):
     s = _get(supplier_id)
     return page(request, "edit.html", s=s, new=new, error=error, cards=db.cards_for(supplier_id),
-                all_categories=sorted(set(claude.CATEGORIES) | set(db.categories())), tag_groups=db.TAG_GROUPS,
+                all_categories=list(dict.fromkeys(db.category_names() + s["categories"])), tag_groups=db.TAG_GROUPS,
                 duplicates=db.possible_duplicates(s["company"], s["website"], s["email"], exclude=supplier_id))
 
 
@@ -173,7 +176,8 @@ def edit(supplier_id: int, company: str = Form(...), contact_name: str = Form(""
          address: str = Form(""), categories: list[str] = Form([]), other_categories: str = Form(""),
          keep_tags: list[str] = Form([]), new_tags: str = Form(""), new_tag_group: str = Form("Other")):
     s = _get(supplier_id)
-    cats = categories + [c.strip() for c in other_categories.split(",") if c.strip()]
+    # New categories typed here join the managed list so they show up everywhere.
+    cats = categories + [db.add_category(c) for c in other_categories.split(",") if c.strip()]
     # Tags: unticking a research tag removes it for good (rescans won't bring it back);
     # typed-in tags are staff tags and are kept across rescans.
     kept = {t.lower() for t in keep_tags}
@@ -189,6 +193,38 @@ def edit(supplier_id: int, company: str = Form(...), contact_name: str = Form(""
     if s["status"] == "new":   # first save of a new card: go research it
         recheck.queue(supplier_id)
     return back_to(f"/supplier/{supplier_id}")
+
+
+# ---------- managing the category list ----------
+
+@app.get("/categories")
+def categories_page(request: Request, error: str = ""):
+    return page(request, "categories.html", categories=db.category_list(), error=error)
+
+
+@app.post("/categories")
+def category_add(name: str = Form(...), description: str = Form("")):
+    if name.strip():
+        db.add_category(name, description)
+    return back_to("/categories")
+
+
+@app.post("/categories/update")
+def category_update(old: str = Form(...), name: str = Form(...), description: str = Form("")):
+    db.update_category(old, name, description)
+    return back_to("/categories")
+
+
+@app.post("/categories/delete")
+def category_delete(name: str = Form(...)):
+    db.delete_category(name)
+    return back_to("/categories")
+
+
+@app.post("/categories/move")
+def category_move(name: str = Form(...), step: int = Form(...)):
+    db.move_category(name, 1 if step > 0 else -1)
+    return back_to("/categories")
 
 
 @app.post("/supplier/{supplier_id}/notes")

@@ -12,13 +12,19 @@
 <section class="card">
   <form method="get" action="/" class="filters">
     <input type="search" name="q" value="{{ q }}" placeholder="Keyword: company, product, city, note…">
-    <select name="category" onchange="this.form.submit()">
-      <option value="">All categories</option>
-      {% for c in categories %}<option {% if c == category %}selected{% endif %}>{{ c }}</option>{% endfor %}
-    </select>
     <label class="check"><input type="checkbox" name="attention" value="true" {% if attention %}checked{% endif %}
       onchange="this.form.submit()"> Needs attention ({{ attention_count }})</label>
     <button class="btn">Search</button>
+    <details class="tag-filter wide" {% if selected_categories %}open{% endif %}>
+      <summary>Categories{% if selected_categories %} ({{ selected_categories|length }} selected){% endif %}</summary>
+      <p class="muted">Shows suppliers in any of the categories you pick. <a href="/categories">Manage categories</a></p>
+      <div class="chips">
+        {% for c in categories %}
+        <label class="chip toggle{% if not c.count %} empty-cat{% endif %}" title="{{ c.description }}"><input type="checkbox" name="category" value="{{ c.name }}"
+          {% if c.name in selected_categories %}checked{% endif %} onchange="this.form.submit()"> {{ c.name }} <span class="n">{{ c.count }}</span></label>
+        {% endfor %}
+      </div>
+    </details>
     {% if tag_counts %}
     <details class="tag-filter wide" {% if selected_tags %}open{% endif %}>
       <summary>Filter by tags{% if selected_tags %} ({{ selected_tags|length }} selected){% endif %}</summary>
@@ -37,16 +43,30 @@
     </details>
     {% endif %}
   </form>
-  {% if selected_tags %}
+  {% if selected_tags or selected_categories %}
   <div class="chips active-tags">
+    {% for c in selected_categories %}
+    <a class="chip on cat" href="{{ without(request, 'category', c) }}" title="Remove this category filter">{{ c }} ✕</a>
+    {% endfor %}
     {% for t in selected_tags %}
-    <a class="chip on" href="{{ without_tag(request, t) }}"
+    <a class="chip on" href="{{ without(request, 'tag', t) }}"
        title="Remove this tag filter">{{ t }} ✕</a>
     {% endfor %}
     <a class="muted" href="/">Clear all</a>
   </div>
   {% endif %}
 </section>
+
+{% if not filtering and total %}
+<section class="card">
+  <div class="head"><h2>Browse by category</h2><a class="muted" href="/categories">Manage</a></div>
+  <div class="cat-grid">
+    {% for c in categories if c.count %}
+    <a class="cat-tile" href="/?category={{ c.name|urlencode }}"><strong>{{ c.name }}</strong><span class="muted">{{ c.count }} supplier{{ "s" if c.count != 1 }}</span></a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <div class="list-head">
   <p class="muted">{{ suppliers|length }} of {{ total }} suppliers</p>

@@ -6,7 +6,7 @@
   <div class="head">
     <div>
       <h1>{{ s.company }}</h1>
-      <p class="muted">{{ s.categories|join(" · ") }}</p>
+      <p class="muted cat-links">{% for c in s.categories %}<a href="/?category={{ c|urlencode }}">{{ c }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
       {% if s.all_tags %}<div class="chips profile-tags">{% for t in s.all_tags %}<a class="chip" href="/?tag={{ t.name|urlencode }}" title="{{ t.group }}: show all suppliers with this tag">{{ t.name }}</a>{% endfor %}</div>{% endif %}
     </div>
     <a class="btn small ghost" href="/supplier/{{ s.id }}/edit">Edit</a>

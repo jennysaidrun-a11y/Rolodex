@@ -11,14 +11,6 @@ import anthropic
 from . import config
 from .db import TAG_GROUPS
 
-CATEGORIES = [
-    "Flour & grains", "Sweeteners", "Dairy & eggs", "Fats & oils", "Yeast & cultures",
-    "Other ingredients", "Packaging", "Labels & printing", "Sanitation & chemicals", "Pest control",
-    "Equipment", "Parts & maintenance", "Pallets & warehouse supplies", "Freight & logistics",
-    "Uniforms & PPE", "Food safety & lab testing", "Utilities & energy", "Staffing", "IT & software",
-    "Other services",
-]
-
 CONTEXT = (
     "You work for a commercial bakery (production lines for mixing, baking, packaging, warehouse and "
     "sanitation). Sales reps drop off business cards; the bakery keeps them in a supplier rolodex so that "
@@ -53,40 +45,56 @@ def _schema(properties: dict) -> dict:
 STR = {"type": "string"}
 STR_LIST = {"type": "array", "items": STR}
 
-CARD_SCHEMA = _schema({
-    "company": STR,
-    "contact_name": STR,
-    "contact_title": STR,
-    "phone": STR,
-    "email": STR,
-    "website": STR,
-    "address": STR,
-    "categories": {"type": "array", "items": {"type": "string", "enum": CATEGORIES}},
-    "products_mentioned": STR_LIST,
-    "other_text": STR,
-})
+def _categories_field(categories: list[dict]) -> dict:
+    """Categories must come from the rolodex's managed list (Categories page)."""
+    names = [c["name"] for c in categories]
+    item = {"type": "string", "enum": names} if names else STR
+    return {"type": "array", "items": item}
 
-RESEARCH_SCHEMA = _schema({
-    "business_status": {"type": "string", "enum": ["active", "closed", "acquired", "unknown"]},
-    "summary": STR,
-    "categories": {"type": "array", "items": {"type": "string", "enum": CATEGORIES}},
-    "products": {"type": "array", "items": _schema({"name": STR, "details": STR})},
-    "pricing": {"type": "array", "items": _schema({"item": STR, "price": STR, "source": STR})},
-    "stock_and_lead_times": STR,
-    "minimum_order": STR,
-    "locations": {"type": "array", "items": _schema({"kind": STR, "address": STR})},
-    "service_area": STR,
-    "certifications": {"type": "array", "items": _schema({"name": STR, "status": STR, "source": STR})},
-    "reviews": _schema({"summary": STR, "sources": STR_LIST}),
-    "regulatory": {"type": "array", "items": _schema({"date": STR, "kind": STR, "description": STR,
-                                                      "source": STR})},
-    "news": {"type": "array", "items": _schema({"date": STR, "headline": STR, "source": STR})},
-    "changes_since_last_check": STR_LIST,
-    "needs_attention": {"type": "boolean"},
-    "attention_reason": STR,
-    "sources": STR_LIST,
-    "tags": {"type": "array", "items": _schema({"group": {"type": "string", "enum": TAG_GROUPS}, "name": STR})},
-})
+
+def _category_guide(categories: list[dict]) -> str:
+    return "Categories to choose from:\n" + "\n".join(
+        f"- {c['name']}" + (f": {c['description']}" if c.get("description") else "") for c in categories)
+
+
+def card_schema(categories: list[dict]) -> dict:
+    return _schema({
+        "company": STR,
+        "contact_name": STR,
+        "contact_title": STR,
+        "phone": STR,
+        "email": STR,
+        "website": STR,
+        "address": STR,
+        "categories": _categories_field(categories),
+        "products_mentioned": STR_LIST,
+        "other_text": STR,
+    })
+
+
+def research_schema(categories: list[dict]) -> dict:
+    return _schema({
+        "business_status": {"type": "string", "enum": ["active", "closed", "acquired", "unknown"]},
+        "summary": STR,
+        "categories": _categories_field(categories),
+        "products": {"type": "array", "items": _schema({"name": STR, "details": STR})},
+        "pricing": {"type": "array", "items": _schema({"item": STR, "price": STR, "source": STR})},
+        "stock_and_lead_times": STR,
+        "minimum_order": STR,
+        "locations": {"type": "array", "items": _schema({"kind": STR, "address": STR})},
+        "service_area": STR,
+        "certifications": {"type": "array", "items": _schema({"name": STR, "status": STR, "source": STR})},
+        "reviews": _schema({"summary": STR, "sources": STR_LIST}),
+        "regulatory": {"type": "array", "items": _schema({"date": STR, "kind": STR, "description": STR,
+                                                          "source": STR})},
+        "news": {"type": "array", "items": _schema({"date": STR, "headline": STR, "source": STR})},
+        "changes_since_last_check": STR_LIST,
+        "needs_attention": {"type": "boolean"},
+        "attention_reason": STR,
+        "sources": STR_LIST,
+        "tags": {"type": "array", "items": _schema({"group": {"type": "string", "enum": TAG_GROUPS}, "name": STR})},
+    })
+
 
 ANSWER_SCHEMA = _schema({
     "answer": STR,
@@ -130,7 +138,7 @@ def _image(path: Path) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}
 
 
-def read_card(front: Path, back: Path | None) -> dict:
+def read_card(front: Path, back: Path | None, categories: list[dict]) -> dict:
     """Pull the contact details and what they sell off a business card (front and optional back)."""
     content = [{"type": "text", "text": "Front of the card:"}, _image(front)]
     if back:
@@ -140,12 +148,12 @@ def read_card(front: Path, back: Path | None) -> dict:
         "the card; don't guess). If there are several phone numbers, put the direct/mobile first and join "
         "them with ' / '. Pick every category that fits what the company sells to a bakery, list any "
         "products or services printed on the card, and put any other useful text (taglines, "
-        "certifications, handwritten notes) in other_text.")})
+        "certifications, handwritten notes) in other_text.\n\n" + _category_guide(categories))})
     response = _create(
         max_tokens=4000,
         system=CONTEXT,
         messages=[{"role": "user", "content": content}],
-        output_config={"effort": "low", "format": {"type": "json_schema", "schema": CARD_SCHEMA}},
+        output_config={"effort": "low", "format": {"type": "json_schema", "schema": card_schema(categories)}},
     )
     return _json_result(response)
 
@@ -164,7 +172,8 @@ TAG_GUIDE = (
 )
 
 
-def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = None) -> dict:
+def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = None,
+             categories: list[dict] | None = None) -> dict:
     """Look the supplier up on the web and return a fresh profile, noting what changed since last time."""
     known = {k: supplier[k] for k in ("company", "contact_name", "phone", "email", "website", "address",
                                       "categories")}
@@ -191,6 +200,7 @@ def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = N
         "check). Set needs_attention for anything the bakery should look at: a recall or warning letter, a "
         "lost certification, a closure or acquisition, or a website/phone that no longer works. "
         "The summary is 2-3 sentences on who they are and what they could supply us.\n\n"
+        + (_category_guide(categories) + "\n\n" if categories else "")
         + TAG_GUIDE
         + ("\nTags already used in the rolodex (reuse these exact spellings whenever one fits; add a new tag "
            "only for something none of them covers):\n"
@@ -203,7 +213,7 @@ def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = N
             system=CONTEXT,
             messages=messages,
             tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 12}],
-            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": RESEARCH_SCHEMA}},
+            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": research_schema(categories or [])}},
         )
         if response.stop_reason != "pause_turn":
             return _json_result(response)

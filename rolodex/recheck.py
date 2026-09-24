@@ -30,16 +30,18 @@ def research_one(supplier_id: int) -> None:
         db.update_supplier(supplier_id, status="researching")
         try:
             notes = [n["text"] for n in db.notes_for(supplier_id)]
-            result = claude.research(s, notes, db.tag_vocabulary())
+            result = claude.research(s, notes, db.tag_vocabulary(), db.category_list())
         except Exception as e:   # keep the loop alive; the error shows on the profile page
             log.exception("research failed for supplier %s", supplier_id)
             msg = str(e) if isinstance(e, claude.ClaudeError) else f"Unexpected error: {e}"
             db.update_supplier(supplier_id, status="error", research_error=msg,
                                next_check=(date.today() + timedelta(days=1)).isoformat())
             return
-        # Research may confirm categories the card didn't show; keep the ones staff set too.
-        merged = list(dict.fromkeys(s["categories"] + result.get("categories", [])))
-        db.update_supplier(supplier_id, categories=merged)
+        # The first research may find categories the card didn't show. After that, categories
+        # belong to staff, so a rescan never re-adds one they removed.
+        if not s["last_checked"]:
+            merged = list(dict.fromkeys(s["categories"] + result.get("categories", [])))
+            db.update_supplier(supplier_id, categories=merged)
         db.record_check(supplier_id, result)
 
 

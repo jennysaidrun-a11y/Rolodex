@@ -49,6 +49,13 @@ firewall. Either works and gives you an `https://` address:
 - **+ Add card**: take the front photo, optionally the back, then tap **Read card**. Check and fix the
   details (it warns if the company looks like one already on file), then tap
   **Save and research**. Research takes a few minutes and runs in the background.
+- **Categories** sort suppliers by the kind of thing they sell (Flour & grains, Packaging, Sanitation &
+  chemicals, and so on). The search page opens with **Browse by category** tiles; **Categories** in the
+  filter lets you pick several at once (a supplier in any of them shows up) and combines with tags and
+  keywords. The **Categories** page (top menu) is where you add, rename, reorder, describe or delete
+  them. Claude sorts each new card and supplier into this list using the descriptions. Renaming
+  updates every supplier; renaming onto an existing category merges the two. The first research can
+  add categories the card didn't show; after that, categories are yours and rescans leave them alone.
 - **Tags** come from the research: each scan tags the supplier by Product (Bread Bags, High-Gluten
   Flour), Certification (SQF, Organic, Kosher), Capability (Custom Printing, Nut-Free Facility),
   Service area and Other, reusing tags already in the rolodex so spellings stay consistent. Open
