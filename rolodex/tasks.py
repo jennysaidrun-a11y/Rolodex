@@ -87,7 +87,7 @@ def cmd_show(kind: str, item_id: int) -> None:
         notes = [n["text"] for n in db.notes_for(item_id)]
         _out({"supplier_id": s["id"], "company": s["company"],
               "instructions": claude.CONTEXT + "\n\n"
-              + claude.research_prompt(s, notes, db.tag_vocabulary(), categories),
+              + claude.research_prompt(s, notes, db.tag_vocabulary(), categories, db.pamphlets_for(item_id)),
               "output_schema": claude.research_schema(categories)})
     else:
         sys.exit("show card <id> | show research <id>")

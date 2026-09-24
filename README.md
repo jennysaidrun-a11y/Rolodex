@@ -12,7 +12,7 @@ bread bags, SQF certified, delivering to us?") and Claude answers from what's on
 ## What it runs on
 
 - One computer on the company system (Windows or Linux) runs the app and keeps the data:
-  `data/rolodex.db` (one file) and `data/cards/` (the card photos). **Back up the `data` folder.**
+  `data/rolodex.db` (one file), `data/cards/` (the photos) and `data/docs/` (saved pamphlet PDFs). **Back up the `data` folder.**
 - Phones and other computers open it in a browser. On a phone, use **Add to Home Screen** and it
   opens like an app.
 - Claude does the reading and research in one of two ways (set `ANALYSIS` in `.env`):
@@ -54,11 +54,13 @@ firewall. Either works and gives you an `https://` address:
 ## Using it
 
 - **+ Add**: choose **Business card** (front, and back if it has anything) or **Pamphlet / brochure**
-  (as many pages as you like; add them in one pick or several). Take photos or pick them from your
-  phone's library. To add a card or pamphlet to a supplier already on file, use **+ Add** in the
-  **Cards & pamphlets** section of its page; what's read from it fills in blanks, goes into notes,
-  and triggers a rescan. In API mode you check the details of a new card before research starts;
-  in Claude Code mode `/analyze` reads and researches in one go, and you can edit afterwards.
+  (just a photo of the front cover: Claude reads the title, finds the full PDF online, usually on
+  the supplier's website, uses it in the profile and saves a copy you can open from the supplier's
+  page). Take the photo or pick it from your phone's library. To add a card or pamphlet to a
+  supplier already on file, use **+ Add** in the **Cards & pamphlets** section of its page; what's
+  read fills in blanks, goes into notes, and triggers a rescan. In API mode you check a new card's
+  details before research starts; in Claude Code mode `/analyze` reads and researches in one go,
+  and you can edit afterwards.
 - **Categories** sort suppliers by the kind of thing they sell (Flour & grains, Packaging, Sanitation &
   chemicals, and so on). The search page opens with **Browse by category** tiles; **Categories** in the
   filter lets you pick several at once (a supplier in any of them shows up) and combines with tags and

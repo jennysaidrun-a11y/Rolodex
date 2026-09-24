@@ -11,7 +11,7 @@ from PIL import Image
 from rolodex import app as app_module
 from rolodex import claude, config, db, recheck
 
-CARD = {"company": "Midwest Flour Co", "contact_name": "Dana Reyes", "contact_title": "Territory Manager",
+CARD = {"document_title": "", "company": "Midwest Flour Co", "contact_name": "Dana Reyes", "contact_title": "Territory Manager",
         "phone": "555-201-3344", "email": "dana@midwestflour.com", "website": "www.midwestflour.com",
         "address": "12 Mill Rd, Salina, KS", "categories": ["Flour & grains"],
         "products_mentioned": ["Bread flour", "Whole wheat"], "other_text": "SQF Level 2"}
@@ -26,6 +26,7 @@ RESEARCH = {"business_status": "active", "summary": "Regional flour mill supplyi
                             "source": "javascript:alert(1)"}],
             "news": [], "changes_since_last_check": [], "needs_attention": True,
             "attention_reason": "Recall in March 2026", "sources": ["https://example.com"],
+            "brochures": [],
             "tags": [{"group": "Product", "name": "High-Gluten Flour"}, {"group": "Certification", "name": "SQF"},
                      {"group": "Service area", "name": "Midwest"}]}
 
@@ -35,12 +36,13 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "rolodex.db")
     monkeypatch.setattr(config, "CARDS_DIR", tmp_path / "cards")
+    monkeypatch.setattr(config, "DOCS_DIR", tmp_path / "docs")
     monkeypatch.setattr(config, "APP_PASSWORD", "")
     monkeypatch.setattr(config, "AUTO_RECHECK", False)
     monkeypatch.setattr(config, "USE_API", True)
     monkeypatch.setitem(app_module.templates.env.globals, "use_api", True)
     monkeypatch.setattr(claude, "read_card", lambda photos, cats, kind="card": dict(CARD))
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None, pamphlets=None: dict(RESEARCH))
     # Run queued research inline so the test can see the result.
     monkeypatch.setattr(recheck, "queue", lambda sid: (
         db.update_supplier(sid, status="queued", next_check=date.today().isoformat()), recheck.research_one(sid)))
@@ -107,12 +109,12 @@ def test_recheck_only_when_due(client, monkeypatch):
     assert db.due_for_recheck() == []                    # researched: next check in 90 days
     db.update_supplier(sid, next_check=date.today().isoformat())
     calls = []
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: calls.append(s["id"]) or dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None, pamphlets=None: calls.append(s["id"]) or dict(RESEARCH))
     assert recheck.run_due() == 1 and calls == [sid]
 
 
 def test_research_failure_is_shown_and_retried(client, monkeypatch):
-    def boom(s, notes, vocab=None, cats=None):
+    def boom(s, notes, vocab=None, cats=None, pamphlets=None):
         raise claude.ClaudeError("The Anthropic API key is missing or wrong.")
     monkeypatch.setattr(claude, "research", boom)
     sid = add_card(client)
@@ -150,7 +152,7 @@ def test_manual_scan_of_selected_suppliers(client, monkeypatch):
     for sid in (a, b):
         client.post(f"/supplier/{sid}/edit", data={"company": f"Supplier {sid}"})
     calls = []
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: calls.append(s["id"]) or dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None, pamphlets=None: calls.append(s["id"]) or dict(RESEARCH))
 
     page = client.get("/").text
     assert 'id="select-toggle"' in page and 'action="/scan"' in page
@@ -171,7 +173,7 @@ def test_tags_from_research_filter_and_edit(client, monkeypatch):
 
     # The next supplier's research sees the existing tags and odd spellings snap to them.
     seen = {}
-    def research(s, notes, vocab=None, cats=None):
+    def research(s, notes, vocab=None, cats=None, pamphlets=None):
         seen["vocab"] = vocab
         return dict(RESEARCH, tags=[{"group": "Product", "name": "bread bags"}, {"group": "Certification", "name": "sqf "}])
     monkeypatch.setattr(claude, "research", research)
@@ -191,7 +193,7 @@ def test_tags_from_research_filter_and_edit(client, monkeypatch):
     # Staff remove a research tag and add their own; a rescan doesn't undo that.
     client.post(f"/supplier/{flour}/edit", data={"company": "Midwest Flour Co", "keep_tags": ["SQF", "High-Gluten Flour"],
                                                  "new_tags": "Sample Received, preferred", "new_tag_group": "Other"})
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None, pamphlets=None: dict(RESEARCH))
     client.post(f"/supplier/{flour}/recheck")
     tags = [t["name"] for t in db.get_supplier(flour)["all_tags"]]
     assert "Midwest" not in tags and {"Sample Received", "preferred", "SQF"} <= set(tags)
@@ -225,7 +227,7 @@ def test_categories_filter_browse_and_manage(client, monkeypatch):
     assert seen["cats"][0] == {"name": "Flour & grains", "description": "Flour, grains, meals, starches", "count": 0}
 
     # First research may add categories; a typed-in category joins the managed list.
-    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None: dict(RESEARCH, categories=["Other ingredients"]))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None, cats=None, pamphlets=None: dict(RESEARCH, categories=["Other ingredients"]))
     client.post(f"/supplier/{flour}/edit", data={"company": "Midwest Flour Co", "categories": ["Flour & grains"],
                                                  "other_categories": "Nuts & seeds"})
     assert db.get_supplier(flour)["categories"] == ["Flour & grains", "Nuts & seeds", "Other ingredients"]
@@ -313,23 +315,39 @@ def test_claude_code_mode_cards_pamphlets_and_research(client, monkeypatch, caps
     assert ok and res["needs_attention"] is True
     assert db.get_supplier(sid)["status"] == "active"
 
-    # A pamphlet added to that supplier later: several pages, read on the next run, then a rescan.
+    # A pamphlet added later: one photo of its cover; research finds and keeps the PDF.
     r = client.post("/add", data={"kind": "pamphlet", "supplier": str(sid)},
-                    files=[("pages", (f"p{i}.jpg", photo(), "image/jpeg")) for i in range(3)], follow_redirects=False)
+                    files={"front": ("cover.jpg", photo(), "image/jpeg")}, follow_redirects=False)
     assert r.headers["location"] == f"/supplier/{sid}"
     ok, pending = run_tasks(capsys, "list")
-    assert pending["read"][0]["kind"] == "pamphlet" and pending["read"][0]["photos"] == 3
-    ok, shown = run_tasks(capsys, "show", "card", str(pending["read"][0]["card_id"]))
-    assert "pamphlet or brochure" in shown["instructions"]
-    ok, res = run_tasks(capsys, "save", "card", str(pending["read"][0]["card_id"]), "-",
-                        stdin=dict(CARD, company="Midwest Flour Company Inc", other_text="Min order 1 pallet"),
-                        monkeypatch=monkeypatch)
+    pamphlet_id = pending["read"][0]["card_id"]
+    assert pending["read"][0]["kind"] == "pamphlet" and pending["read"][0]["photos"] == 1
+    ok, shown = run_tasks(capsys, "show", "card", str(pamphlet_id))
+    assert "front cover of a supplier's pamphlet" in shown["instructions"]
+    ok, res = run_tasks(capsys, "save", "card", str(pamphlet_id), "-",
+                        stdin=dict(CARD, company="Midwest Flour Company Inc", document_title="Bakery Flours 2026",
+                                   other_text="Min order 1 pallet"), monkeypatch=monkeypatch)
     s = db.get_supplier(sid)
     assert s["company"] == "Midwest Flour Co"                    # an earlier value isn't overwritten
-    assert s["status"] == "queued"                               # rescan with the new information
+    assert s["status"] == "queued"                               # rescan to find the PDF
     assert any(n["text"] == "From the pamphlet: Min order 1 pallet" for n in db.notes_for(sid))
+    ok, shown = run_tasks(capsys, "show", "research", str(sid))
+    assert f"card_id {pamphlet_id}: Bakery Flours 2026" in shown["instructions"]
+
+    class FakePDF(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=0: FakePDF(b"%PDF-1.7 fake"))
+    result = dict(RESEARCH, brochures=[
+        {"card_id": pamphlet_id, "title": "Bakery Flours 2026", "pdf_url": "https://mwf.example/flours.pdf",
+         "summary": "Full flour line with specs."},
+        {"card_id": 0, "title": "Allergen statement", "pdf_url": "https://mwf.example/allergen.pdf", "summary": ""}])
+    ok, res = run_tasks(capsys, "save", "research", str(sid), "-", stdin=result, monkeypatch=monkeypatch)
+    pamphlet = db.get_card(pamphlet_id)
+    assert pamphlet["pdf_url"] == "https://mwf.example/flours.pdf" and pamphlet["pdf_file"] == f"pamphlet-{pamphlet_id}.pdf"
+    assert client.get(f"/docs/{pamphlet['pdf_file']}").content == b"%PDF-1.7 fake"
     page = client.get(f"/supplier/{sid}").text
-    assert "Pamphlet" in page and page.count('alt="pamphlet photo') == 3
+    assert "Bakery Flours 2026" in page and "Open PDF" in page and "Allergen statement" in page
 
     ok, directory = run_tasks(capsys, "directory")
     assert directory[0]["company"] == "Midwest Flour Co"
@@ -340,9 +358,23 @@ def test_pamphlet_read_by_api(client, monkeypatch):
     seen = {}
     def read_card(photos, cats, kind="card"):
         seen.update(n=len(photos), kind=kind)
-        return dict(CARD)
+        return dict(CARD, document_title="Bread Bag Guide")
     monkeypatch.setattr(claude, "read_card", read_card)
-    r = client.post("/add", data={"kind": "pamphlet"},
-                    files=[("pages", (f"p{i}.jpg", photo(), "image/jpeg")) for i in range(2)], follow_redirects=False)
-    assert seen == {"n": 2, "kind": "pamphlet"} and "/edit?new=1" in r.headers["location"]
+    r = client.post("/add", data={"kind": "pamphlet"}, files={"front": ("cover.jpg", photo(), "image/jpeg"),
+                                                             "back": ("x.jpg", photo(), "image/jpeg")},
+                    follow_redirects=False)
+    assert seen == {"n": 1, "kind": "pamphlet"} and "/edit?new=1" in r.headers["location"]   # back ignored
+    sid = int(r.headers["location"].split("/")[2])
+    assert db.pamphlets_for(sid)[0]["title"] == "Bread Bag Guide"
     assert client.post("/add", data={"kind": "pamphlet"}).status_code == 400
+
+
+def test_download_pdf_rejects_non_pdfs(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DOCS_DIR", tmp_path)
+    class Page(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=0: Page(b"<html>not a pdf</html>"))
+    assert recheck.download_pdf("https://x.example/a.pdf", "a.pdf") == ""
+    assert recheck.download_pdf("file:///etc/passwd", "b.pdf") == ""
+    assert list(tmp_path.iterdir()) == []

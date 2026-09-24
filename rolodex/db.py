@@ -45,7 +45,10 @@ CREATE TABLE IF NOT EXISTS cards (
     front TEXT NOT NULL,                -- first photo
     back TEXT,                          -- back of a card (older rows)
     pages TEXT DEFAULT '[]',            -- JSON list of further photos (card back, pamphlet pages)
-    kind TEXT DEFAULT 'card',           -- card | pamphlet
+    kind TEXT DEFAULT 'card',           -- card | pamphlet (a photo of its cover)
+    title TEXT DEFAULT '',              -- pamphlet title read off the cover
+    pdf_url TEXT DEFAULT '',            -- where research found the pamphlet's PDF
+    pdf_file TEXT DEFAULT '',           -- our saved copy, in data/docs/
     raw TEXT DEFAULT '{}',              -- what Claude read off it
     read_at TEXT,                       -- NULL until Claude has read it
     created_at TEXT NOT NULL
@@ -93,7 +96,8 @@ TAG_GROUPS = ["Product", "Certification", "Capability", "Service area", "Other"]
 # Columns added after the first release; init() adds them to an existing database.
 _ADDED_COLUMNS = {
     "suppliers": {"tags": "TEXT DEFAULT '[]'", "staff_tags": "TEXT DEFAULT '[]'", "removed_tags": "TEXT DEFAULT '[]'"},
-    "cards": {"pages": "TEXT DEFAULT '[]'", "kind": "TEXT DEFAULT 'card'", "read_at": "TEXT"},
+    "cards": {"pages": "TEXT DEFAULT '[]'", "kind": "TEXT DEFAULT 'card'", "read_at": "TEXT",
+              "title": "TEXT DEFAULT ''", "pdf_url": "TEXT DEFAULT ''", "pdf_file": "TEXT DEFAULT ''"},
 }
 
 EDITABLE = ("company", "contact_name", "contact_title", "phone", "email", "website", "address",
@@ -119,6 +123,7 @@ def connect():
 def init() -> None:
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     config.CARDS_DIR.mkdir(parents=True, exist_ok=True)
+    config.DOCS_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(SCHEMA)
         if not conn.execute("SELECT 1 FROM category_list LIMIT 1").fetchone():
@@ -173,7 +178,7 @@ def delete_supplier(supplier_id: int) -> list[str]:
     """Delete a supplier; returns the card photo file names so the caller can remove them."""
     with connect() as conn:
         files = [f for c in conn.execute("SELECT * FROM cards WHERE supplier_id = ?", (supplier_id,))
-                 for f in _card(c)["photos"]]
+                 for f in _card(c)["photos"] + ([c["pdf_file"]] if c["pdf_file"] else [])]
         conn.execute("DELETE FROM suppliers WHERE id = ?", (supplier_id,))
     return files
 
@@ -377,7 +382,17 @@ def add_card(supplier_id: int, photos: list[str], kind: str = "card", raw: dict 
 
 def mark_card_read(card_id: int, raw: dict) -> None:
     with connect() as conn:
-        conn.execute("UPDATE cards SET raw = ?, read_at = ? WHERE id = ?", (json.dumps(raw), now(), card_id))
+        conn.execute("UPDATE cards SET raw = ?, title = ?, read_at = ? WHERE id = ?",
+                     (json.dumps(raw), raw.get("document_title", ""), now(), card_id))
+
+
+def set_card_pdf(card_id: int, pdf_url: str, pdf_file: str) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE cards SET pdf_url = ?, pdf_file = ? WHERE id = ?", (pdf_url, pdf_file, card_id))
+
+
+def pamphlets_for(supplier_id: int) -> list[dict]:
+    return [c for c in cards_for(supplier_id) if c["kind"] == "pamphlet"]
 
 
 def get_card(card_id: int) -> dict | None:

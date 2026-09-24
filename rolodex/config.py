@@ -24,6 +24,7 @@ _load_dotenv()
 DATA_DIR = Path(os.environ.get("ROLODEX_DATA_DIR", ROOT / "data"))
 DB_PATH = DATA_DIR / "rolodex.db"
 CARDS_DIR = DATA_DIR / "cards"
+DOCS_DIR = DATA_DIR / "docs"          # saved copies of suppliers' pamphlet / catalog PDFs
 
 # One shared password for everyone at the company. The data isn't sensitive, but the
 # app is reachable from outside and every card/recheck spends Claude API credit.

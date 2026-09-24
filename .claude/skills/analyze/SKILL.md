@@ -46,6 +46,9 @@ python -m rolodex.tasks show research <supplier_id>
 - Follow `instructions`: use WebSearch / WebFetch to verify facts, with a source URL for each.
   Never invent prices, certifications or dates. Confirm it is the same business as the card.
 - Reuse the existing tags listed in the instructions whenever one fits.
+- Pamphlets: we only photograph the cover. The instructions list them by card_id; find each
+  one's PDF online (supplier's literature/downloads pages first), open it with WebFetch, use its
+  contents, and put a direct PDF link in `brochures`. The app downloads and keeps a copy itself.
 - Produce JSON matching `output_schema`, write it to a file, then:
 
 ```

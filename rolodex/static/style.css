@@ -128,3 +128,5 @@ a.chip.on { color: #fff; }
 .kind-switch input { width: auto; margin: 0; }
 .kind-switch label:has(input:checked) { border-color: var(--accent); background: var(--warn-bg); color: var(--accent); }
 .cards img { max-height: 220px; object-fit: contain; background: var(--bg); }
+.pdf-links { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 4px 0 8px; }
+[hidden] { display: none !important; }

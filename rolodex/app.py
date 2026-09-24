@@ -135,16 +135,13 @@ def add_form(request: Request, supplier: int | None = None):
 
 @app.post("/add")
 async def add_card(request: Request, kind: str = Form("card"), supplier: int | None = Form(None),
-                   front: UploadFile | None = File(None), back: UploadFile | None = File(None),
-                   pages: list[UploadFile] = File([])):
-    """A business card (front/back) or pamphlet (pages), for a new supplier or one already on file."""
+                   front: UploadFile | None = File(None), back: UploadFile | None = File(None)):
+    """A business card (front/back) or a pamphlet (a photo of its cover; research finds the PDF),
+    for a new supplier or one already on file."""
     kind = "pamphlet" if kind == "pamphlet" else "card"
-    uploads = [front, back] if kind == "card" else pages
-    uploads = [u for u in uploads if u is not None and u.filename]
+    uploads = [u for u in ([front, back] if kind == "card" else [front]) if u is not None and u.filename]
     if not uploads:
-        raise HTTPException(400, "Please add at least one photo.")
-    if len(uploads) > 20:
-        raise HTTPException(400, "That's a lot of pages; please add at most 20 photos at a time.")
+        raise HTTPException(400, "Please add a photo.")
     existing = db.get_supplier(supplier) if supplier else None
     photos = [_save_photo(u) for u in uploads]
 
@@ -289,7 +286,16 @@ def delete(supplier_id: int):
     _get(supplier_id)
     for name in db.delete_supplier(supplier_id):
         (config.CARDS_DIR / name).unlink(missing_ok=True)
+        (config.DOCS_DIR / name).unlink(missing_ok=True)
     return back_to("/")
+
+
+@app.get("/docs/{name}")
+def pdf_copy(name: str):
+    path = config.DOCS_DIR / Path(name).name
+    if not path.exists():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="application/pdf")
 
 
 @app.get("/cards/{name}")

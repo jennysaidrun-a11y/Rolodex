@@ -9,20 +9,14 @@
       <label><input type="radio" name="kind" value="pamphlet"> Pamphlet / brochure</label>
     </div>
 
-    <div data-kind="card">
-      <label class="photo">Front of card
-        <input type="file" name="front" accept="image/*">
-      </label>
-      <label class="photo">Back of card <span class="muted">(if it has anything on it)</span>
-        <input type="file" name="back" accept="image/*">
-      </label>
-    </div>
-    <div data-kind="pamphlet" hidden>
-      <label class="photo">Pages <span class="muted">(pick several photos at once, or add them one at a time)</span>
-        <input type="file" name="pages" accept="image/*" multiple>
-      </label>
-      <p class="muted" id="page-count"></p>
-    </div>
+    <label class="photo"><span data-kind="card">Front of card</span><span data-kind="pamphlet" hidden>Front cover of the pamphlet</span>
+      <input type="file" name="front" accept="image/*" required>
+    </label>
+    <label class="photo" data-kind="card">Back of card <span class="muted">(if it has anything on it)</span>
+      <input type="file" name="back" accept="image/*">
+    </label>
+    <p class="muted" data-kind="pamphlet" hidden>Just the cover. Claude finds the full PDF version online
+      (usually on the supplier's website) and saves a copy with the supplier.</p>
 
     <button class="btn big">{% if use_api %}Read it{% else %}Save{% endif %}</button>
   </form>
@@ -35,24 +29,13 @@
 <script>
 (() => {
   const form = document.getElementById("add-form");
-  const sections = form.querySelectorAll("[data-kind]");
-  const pages = form.querySelector("input[name=pages]"), count = document.getElementById("page-count");
-  const picked = new DataTransfer();   // lets people add pamphlet pages over several picks
   const show = () => {
     const kind = form.querySelector("input[name=kind]:checked").value;
-    sections.forEach(s => { s.hidden = s.dataset.kind !== kind; });
-    form.querySelector("input[name=front]").required = kind === "card";
+    form.querySelectorAll("[data-kind]").forEach(el => { el.hidden = el.dataset.kind !== kind; });
+    if (kind !== "card") form.querySelector("input[name=back]").value = "";
   };
   form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
-  pages.addEventListener("change", () => {
-    [...pages.files].forEach(f => picked.items.add(f));
-    pages.files = picked.files;
-    const n = picked.files.length;
-    count.textContent = n ? `${n} page${n > 1 ? "s" : ""} added` : "";
-  });
-  form.addEventListener("submit", e => {
-    const kind = form.querySelector("input[name=kind]:checked").value;
-    if (kind === "pamphlet" && !pages.files.length) { e.preventDefault(); alert("Add at least one page."); return; }
+  form.addEventListener("submit", () => {
     const b = form.querySelector("button"); b.disabled = true;
     b.textContent = "{{ 'Reading…' if use_api else 'Saving…' }}";
   });

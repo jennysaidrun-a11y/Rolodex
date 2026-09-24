@@ -8,7 +8,9 @@ Runs inside the web app as a background thread, or on its own from a scheduled t
 from __future__ import annotations
 
 import logging
+import re
 import threading
+import urllib.request
 from datetime import date, timedelta
 
 from . import claude, config, db
@@ -52,6 +54,36 @@ def save_research(supplier_id: int, result: dict) -> None:
         merged = list(dict.fromkeys(s["categories"] + result.get("categories", [])))
         db.update_supplier(supplier_id, categories=merged)
     db.record_check(supplier_id, result)
+    _save_brochures(supplier_id, result.get("brochures", []))
+
+
+MAX_PDF_BYTES = 40 * 1024 * 1024
+
+
+def download_pdf(url: str, name: str) -> str:
+    """Save a copy of a PDF into data/docs/; returns the file name, or "" if it isn't a reachable PDF."""
+    if not re.match(r"^https?://", url or "", re.I):
+        return ""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (supplier rolodex)"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = r.read(MAX_PDF_BYTES + 1)
+    except Exception:
+        log.warning("couldn't download %s", url)
+        return ""
+    if not data.startswith(b"%PDF") or len(data) > MAX_PDF_BYTES:
+        return ""
+    (config.DOCS_DIR / name).write_bytes(data)
+    return name
+
+
+def _save_brochures(supplier_id: int, brochures: list[dict]) -> None:
+    """Link each pamphlet to the PDF research found for it, and keep our own copy of it."""
+    pamphlets = {c["id"]: c for c in db.pamphlets_for(supplier_id)}
+    for b in brochures:
+        card = pamphlets.get(b.get("card_id"))
+        if card and b.get("pdf_url") and b["pdf_url"] != card["pdf_url"]:
+            db.set_card_pdf(card["id"], b["pdf_url"], download_pdf(b["pdf_url"], f"pamphlet-{card['id']}.pdf"))
 
 
 def research_one(supplier_id: int) -> None:
@@ -63,7 +95,8 @@ def research_one(supplier_id: int) -> None:
         db.update_supplier(supplier_id, status="researching")
         try:
             notes = [n["text"] for n in db.notes_for(supplier_id)]
-            result = claude.research(s, notes, db.tag_vocabulary(), db.category_list())
+            result = claude.research(s, notes, db.tag_vocabulary(), db.category_list(),
+                                     db.pamphlets_for(supplier_id))
         except Exception as e:   # keep the loop alive; the error shows on the profile page
             log.exception("research failed for supplier %s", supplier_id)
             msg = str(e) if isinstance(e, claude.ClaudeError) else f"Unexpected error: {e}"

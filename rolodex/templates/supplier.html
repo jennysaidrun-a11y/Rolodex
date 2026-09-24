@@ -88,6 +88,17 @@
   <ul>{% for x in p.news %}<li>{{ x.date }}: {{ x.headline }}{{ src(x.source) }}</li>{% endfor %}</ul>{% endif %}
 </section>
 
+{% set other_pdfs = (p.brochures or [])|selectattr("card_id", "equalto", 0)|selectattr("pdf_url")|list %}
+{% set pamphlet_pdfs = (p.brochures or [])|rejectattr("card_id", "equalto", 0)|selectattr("summary")|list %}
+{% if other_pdfs or pamphlet_pdfs %}
+<section class="card"><h2>Brochures &amp; documents</h2>
+  <ul>
+  {% for b in pamphlet_pdfs %}<li><strong>{{ b.title }}</strong>{% if b.summary %}: {{ b.summary }}{% endif %}{% if b.pdf_url|link %} <a class="src" href="{{ b.pdf_url|link }}" target="_blank" rel="noopener">PDF</a>{% endif %}</li>{% endfor %}
+  {% for b in other_pdfs %}<li>{% if b.pdf_url|link %}<a href="{{ b.pdf_url|link }}" target="_blank" rel="noopener">{{ b.title or "PDF" }}</a>{% else %}{{ b.title }}{% endif %}{% if b.summary %}: {{ b.summary }}{% endif %}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 {% if p.sources %}
 <section class="card"><h2>Sources</h2>
   <ul class="sources">{% for u in p.sources if u|link %}<li><a href="{{ u|link }}" target="_blank" rel="noopener">{{ u }}</a></li>{% endfor %}</ul>
@@ -110,7 +121,13 @@
 <section class="card" id="photos"><div class="head"><h2>Cards &amp; pamphlets</h2>
   <a class="btn small ghost" href="/add?supplier={{ s.id }}">+ Add</a></div>
   {% for c in cards %}
-  <p class="muted">{{ "Pamphlet" if c.kind == "pamphlet" else "Business card" }} · added {{ c.created_at[:10] }}{% if not c.read_at %} · <strong>not read yet</strong>{% endif %}</p>
+  <p class="muted">{% if c.kind == "pamphlet" %}Pamphlet{% if c.title %}: <strong>{{ c.title }}</strong>{% endif %}{% else %}Business card{% endif %}
+    · added {{ c.created_at[:10] }}{% if not c.read_at %} · <strong>not read yet</strong>{% endif %}</p>
+  {% if c.kind == "pamphlet" and c.read_at %}
+  <p class="pdf-links">{% if c.pdf_file %}<a class="btn small" href="/docs/{{ c.pdf_file }}" target="_blank">Open PDF</a>{% endif %}
+    {% if c.pdf_url|link %}<a href="{{ c.pdf_url|link }}" target="_blank" rel="noopener">{{ "Original link" if c.pdf_file else "PDF online" }}</a>{% endif %}
+    {% if not c.pdf_url %}<span class="muted">PDF version not found yet{% if s.last_checked %} (looked {{ s.last_checked[:10] }}){% else %}; it's looked for when the supplier is researched{% endif %}.</span>{% endif %}</p>
+  {% endif %}
   <div class="cards">
     {% for p in c.photos %}<a href="/cards/{{ p }}" target="_blank"><img src="/cards/{{ p }}" alt="{{ c.kind }} photo {{ loop.index }}" loading="lazy"></a>{% endfor %}
   </div>

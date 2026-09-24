@@ -68,6 +68,7 @@ def card_schema(categories: list[dict]) -> dict:
         "address": STR,
         "categories": _categories_field(categories),
         "products_mentioned": STR_LIST,
+        "document_title": STR,
         "other_text": STR,
     })
 
@@ -92,6 +93,8 @@ def research_schema(categories: list[dict]) -> dict:
         "needs_attention": {"type": "boolean"},
         "attention_reason": STR,
         "sources": STR_LIST,
+        "brochures": {"type": "array", "items": _schema({
+            "card_id": {"type": "integer"}, "title": STR, "pdf_url": STR, "summary": STR})},
         "tags": {"type": "array", "items": _schema({"group": {"type": "string", "enum": TAG_GROUPS}, "name": STR})},
     })
 
@@ -142,17 +145,18 @@ def card_prompt(categories: list[dict], kind: str = "card") -> str:
     """Instructions for reading a card or pamphlet; shared by the API path and the Claude Code workflow."""
     if kind == "pamphlet":
         return (
-            "These photos are the pages of a supplier's pamphlet or brochure, in order. Copy the company's "
-            "contact details exactly as printed (leave a field empty if it isn't there; don't guess); "
-            "contact_name/contact_title only if a specific rep is named. Pick every category that fits what "
-            "they sell to a bakery. products_mentioned: every product, product line or service shown, with "
-            "sizes/specs where given. other_text: a short summary of anything else useful to a buyer "
-            "(certifications, minimum orders, lead times, prices, service area, promotions with dates).\n\n"
+            "This photo is the front cover of a supplier's pamphlet or brochure (the full version is found "
+            "online later, as a PDF). document_title: the pamphlet's title as printed, plus any edition, "
+            "year or product line shown, so it can be searched for. Copy the company's contact details "
+            "exactly as printed (leave a field empty if it isn't there; don't guess); contact_name/"
+            "contact_title only if a specific rep is named. Pick every category that fits what they sell "
+            "to a bakery. products_mentioned: products or product lines shown on the cover. other_text: "
+            "anything else useful on the cover (certifications, slogans, promotions with dates).\n\n"
             + _category_guide(categories))
     return (
         "Read this business card. Copy contact details exactly as printed (leave a field empty if it isn't on "
         "the card; don't guess). If there are several phone numbers, put the direct/mobile first and join "
-        "them with ' / '. Pick every category that fits what the company sells to a bakery, list any "
+        "them with ' / '. Leave document_title empty. Pick every category that fits what the company sells to a bakery, list any "
         "products or services printed on the card, and put any other useful text (taglines, "
         "certifications, handwritten notes) in other_text.\n\n" + _category_guide(categories))
 
@@ -189,7 +193,7 @@ TAG_GUIDE = (
 
 
 def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | None = None,
-                    categories: list[dict] | None = None) -> str:
+                    categories: list[dict] | None = None, pamphlets: list[dict] | None = None) -> str:
     """Instructions for researching a supplier; shared by the API path and the Claude Code workflow."""
     known = {k: supplier[k] for k in ("company", "contact_name", "phone", "email", "website", "address",
                                       "categories")}
@@ -212,6 +216,15 @@ def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | N
         "- recent news: acquisitions, closures, new plants, leadership changes\n\n"
         "Make sure it is the same business as the card (match website, address or phone). If you can't "
         "confirm a fact, leave it out. Dates as YYYY-MM or YYYY-MM-DD.\n"
+        + ("\nWe have the front cover of these pamphlets from them:\n"
+           + "\n".join(f"- card_id {p['id']}: {p['title'] or '(title not read)'}" for p in pamphlets)
+           + "\nFind the PDF version of each online (their website's literature/downloads/resources pages "
+           "first, then a web search). Read it and use what's in it (products, specs, certifications, "
+           "minimum orders) in the profile. List each in brochures with its card_id and a direct link to "
+           "the PDF file (pdf_url empty if you can't find it), plus a 1-2 sentence summary.\n"
+           if pamphlets else "")
+        + "brochures: also list other useful PDFs you find (catalogs, spec sheets, allergen or "
+        "certification documents) with card_id 0. Only direct links to PDF files.\n"
         "changes_since_last_check: short bullets of what differs from the last check (empty on the first "
         "check). Set needs_attention for anything the bakery should look at: a recall or warning letter, a "
         "lost certification, a closure or acquisition, or a website/phone that no longer works. "
@@ -225,15 +238,16 @@ def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | N
 
 
 def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = None,
-             categories: list[dict] | None = None) -> dict:
+             categories: list[dict] | None = None, pamphlets: list[dict] | None = None) -> dict:
     """Look the supplier up on the web and return a fresh profile, noting what changed since last time."""
-    messages = [{"role": "user", "content": research_prompt(supplier, notes, vocabulary, categories)}]
+    messages = [{"role": "user", "content": research_prompt(supplier, notes, vocabulary, categories, pamphlets)}]
     for _ in range(6):   # web search can pause a long turn; resume it a few times
         response = _create(
             max_tokens=16000,
             system=CONTEXT,
             messages=messages,
-            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 12}],
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 12},
+                   {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 6}],   # opens PDFs
             output_config={"effort": "medium", "format": {"type": "json_schema", "schema": research_schema(categories or [])}},
         )
         if response.stop_reason != "pause_turn":
