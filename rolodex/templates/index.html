@@ -22,25 +22,64 @@
   </form>
 </section>
 
-<p class="muted">{{ suppliers|length }} of {{ total }} suppliers</p>
+<div class="list-head">
+  <p class="muted">{{ suppliers|length }} of {{ total }} suppliers</p>
+  {% if suppliers %}<button type="button" class="btn small ghost" id="select-toggle" aria-pressed="false">Select</button>{% endif %}
+</div>
 {% if not total %}
 <section class="card empty">
   <p>No suppliers yet. Tap <a href="/add">+ Add card</a> and take a photo of the first business card.</p>
 </section>
 {% endif %}
-<ul class="list">
+<form method="post" action="/scan" id="scan-form">
+<input type="hidden" name="return_to" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+<ul class="list" id="supplier-list">
   {% for s in suppliers %}
+  {% set busy = s.status in ("new", "queued", "researching") %}
   <li>
+    <label class="pick" title="{{ 'Review the card first' if s.status == 'new' else ('Already scanning' if busy else 'Select for scan') }}">
+      <input type="checkbox" name="ids" value="{{ s.id }}" {% if busy %}disabled{% endif %}></label>
     <a href="/supplier/{{ s.id }}">
       <strong>{{ s.company }}</strong>
       {% if s.needs_attention %}<span class="tag warn">Needs attention</span>{% endif %}
-      {% if s.status in ("queued", "researching") %}<span class="tag">Researching…</span>{% endif %}
+      {% if s.status in ("queued", "researching") %}<span class="tag">Scanning…</span>{% endif %}
       {% if s.status == "closed" %}<span class="tag warn">Closed</span>{% endif %}
       {% if s.status == "new" %}<span class="tag">Not reviewed</span>{% endif %}
-      <span class="muted">{{ s.categories|join(", ") }}</span>
+      <span class="muted">{{ s.categories|join(", ") }}{% if s.last_checked %} · scanned {{ s.last_checked[:10] }}{% endif %}</span>
       {% if s.summary %}<span class="summary">{{ s.summary }}</span>{% endif %}
     </a>
   </li>
   {% endfor %}
 </ul>
+<div class="scan-bar" id="scan-bar">
+  <label class="check"><input type="checkbox" id="select-all"> Select all</label>
+  <button class="btn" id="scan-btn" disabled>Scan selected</button>
+</div>
+</form>
+<script>
+(() => {
+  const toggle = document.getElementById("select-toggle");
+  if (!toggle) return;
+  const list = document.getElementById("supplier-list"), bar = document.getElementById("scan-bar");
+  const boxes = [...list.querySelectorAll("input[name=ids]:not(:disabled)")];
+  const all = document.getElementById("select-all"), btn = document.getElementById("scan-btn");
+  const update = () => {
+    const n = boxes.filter(b => b.checked).length;
+    btn.disabled = !n;
+    btn.textContent = n ? `Scan selected (${n})` : "Scan selected";
+    all.checked = n > 0 && n === boxes.length;
+  };
+  toggle.addEventListener("click", () => {
+    const on = !list.classList.contains("selecting");
+    list.classList.toggle("selecting", on); bar.classList.toggle("on", on);
+    toggle.setAttribute("aria-pressed", on); toggle.textContent = on ? "Done" : "Select";
+    if (!on) { boxes.forEach(b => b.checked = false); update(); }
+  });
+  all.addEventListener("change", () => { boxes.forEach(b => b.checked = all.checked); update(); });
+  boxes.forEach(b => b.addEventListener("change", update));
+  document.getElementById("scan-form").addEventListener("submit", () => {
+    btn.disabled = true; btn.textContent = "Starting scans…";
+  });
+})();
+</script>
 {% endblock %}

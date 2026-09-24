@@ -53,7 +53,10 @@ firewall. Either works and gives you an `https://` address:
   are searchable and Claude reads them when answering questions.
 - **Needs attention** (checkbox on the search page) lists suppliers whose last check found something
   to look at. Tap **Mark as reviewed** once someone has.
-- **Recheck now** refreshes a profile without waiting for the 3-month recheck.
+- **Manual scan**: **Scan now** on a supplier's page refreshes its profile without waiting for the
+  3-month recheck. To scan several at once, tap **Select** above the supplier list, tick the
+  companies (or **Select all**, which follows the current search and filters), then
+  **Scan selected**. Scans run one after another in the background.
 
 ## Settings (`.env`)
 

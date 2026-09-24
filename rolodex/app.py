@@ -193,6 +193,16 @@ def recheck_now(supplier_id: int):
     return back_to(f"/supplier/{supplier_id}")
 
 
+@app.post("/scan")
+def scan_selected(ids: list[int] = Form([]), return_to: str = Form("/")):
+    """Manual scan of the suppliers ticked on the list; unreviewed or already-running ones are skipped."""
+    for supplier_id in ids:
+        s = db.get_supplier(supplier_id)
+        if s and s["status"] not in ("new", "queued", "researching"):
+            recheck.queue(supplier_id)
+    return back_to(return_to if return_to.startswith("/") and not return_to.startswith("//") else "/")
+
+
 @app.post("/supplier/{supplier_id}/reviewed")
 def mark_reviewed(supplier_id: int):
     _get(supplier_id)

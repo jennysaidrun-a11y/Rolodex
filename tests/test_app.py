@@ -138,3 +138,22 @@ def test_directory_for_ask_is_compact():
          "email": "", "address": "", "summary": "", "profile": RESEARCH, "needs_attention": 0,
          "attention_note": "", "last_checked": None}
     assert '"regulatory":["2026-03 Recall: Undeclared sesame"]' in claude._directory([s], {})
+
+
+def test_manual_scan_of_selected_suppliers(client, monkeypatch):
+    a, b, unreviewed = add_card(client), add_card(client), add_card(client)
+    for sid in (a, b):
+        client.post(f"/supplier/{sid}/edit", data={"company": f"Supplier {sid}"})
+    calls = []
+    monkeypatch.setattr(claude, "research", lambda s, notes: calls.append(s["id"]) or dict(RESEARCH))
+
+    page = client.get("/").text
+    assert 'id="select-toggle"' in page and 'action="/scan"' in page
+
+    r = client.post("/scan", data={"ids": [a, b, unreviewed], "return_to": "/?q=flour"}, follow_redirects=False)
+    assert r.headers["location"] == "/?q=flour"
+    assert sorted(calls) == [a, b]                        # the unreviewed card is skipped
+    assert db.get_supplier(unreviewed)["status"] == "new"
+
+    r = client.post("/scan", data={"ids": [a], "return_to": "//evil.example"}, follow_redirects=False)
+    assert r.headers["location"] == "/"

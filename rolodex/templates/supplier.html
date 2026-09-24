@@ -12,10 +12,10 @@
   </div>
 
   {% if s.status in ("queued", "researching") %}
-    <p class="notice">Claude is researching this supplier. This takes a few minutes; refresh the page to see the result.</p>
+    <p class="notice">Claude is scanning this supplier. This takes a few minutes; refresh the page to see the result.</p>
   {% elif s.status == "error" %}
     <p class="error">The last research attempt failed: {{ s.research_error }} It will try again tomorrow,
-      or use "Recheck now".</p>
+      or use "Scan now".</p>
   {% elif s.status == "new" %}
     <p class="notice">Card not reviewed yet. <a href="/supplier/{{ s.id }}/edit?new=1">Check the details</a> to start research.</p>
   {% endif %}
@@ -38,7 +38,7 @@
     {% if s.last_checked %}Last checked {{ s.last_checked[:10] }} · next check {{ s.next_check }}{% else %}Not researched yet{% endif %}
   </p>
   <form method="post" action="/supplier/{{ s.id }}/recheck"><button class="btn small ghost"
-    {% if s.status in ("queued", "researching", "new") %}disabled{% endif %}>Recheck now</button></form>
+    {% if s.status in ("queued", "researching", "new") %}disabled{% endif %}>Scan now</button></form>
 </section>
 
 {% if p %}
