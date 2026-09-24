@@ -30,7 +30,7 @@ def research_one(supplier_id: int) -> None:
         db.update_supplier(supplier_id, status="researching")
         try:
             notes = [n["text"] for n in db.notes_for(supplier_id)]
-            result = claude.research(s, notes)
+            result = claude.research(s, notes, db.tag_vocabulary())
         except Exception as e:   # keep the loop alive; the error shows on the profile page
             log.exception("research failed for supplier %s", supplier_id)
             msg = str(e) if isinstance(e, claude.ClaudeError) else f"Unexpected error: {e}"

@@ -24,7 +24,9 @@ RESEARCH = {"business_status": "active", "summary": "Regional flour mill supplyi
             "regulatory": [{"date": "2026-03", "kind": "Recall", "description": "Undeclared sesame",
                             "source": "javascript:alert(1)"}],
             "news": [], "changes_since_last_check": [], "needs_attention": True,
-            "attention_reason": "Recall in March 2026", "sources": ["https://example.com"]}
+            "attention_reason": "Recall in March 2026", "sources": ["https://example.com"],
+            "tags": [{"group": "Product", "name": "High-Gluten Flour"}, {"group": "Certification", "name": "SQF"},
+                     {"group": "Service area", "name": "Midwest"}]}
 
 
 @pytest.fixture
@@ -35,7 +37,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APP_PASSWORD", "")
     monkeypatch.setattr(config, "AUTO_RECHECK", False)
     monkeypatch.setattr(claude, "read_card", lambda front, back: dict(CARD))
-    monkeypatch.setattr(claude, "research", lambda s, notes: dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None: dict(RESEARCH))
     # Run queued research inline so the test can see the result.
     monkeypatch.setattr(recheck, "queue", lambda sid: (
         db.update_supplier(sid, status="queued", next_check=date.today().isoformat()), recheck.research_one(sid)))
@@ -102,12 +104,12 @@ def test_recheck_only_when_due(client, monkeypatch):
     assert db.due_for_recheck() == []                    # researched: next check in 90 days
     db.update_supplier(sid, next_check=date.today().isoformat())
     calls = []
-    monkeypatch.setattr(claude, "research", lambda s, notes: calls.append(s["id"]) or dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None: calls.append(s["id"]) or dict(RESEARCH))
     assert recheck.run_due() == 1 and calls == [sid]
 
 
 def test_research_failure_is_shown_and_retried(client, monkeypatch):
-    def boom(s, notes):
+    def boom(s, notes, vocab=None):
         raise claude.ClaudeError("The Anthropic API key is missing or wrong.")
     monkeypatch.setattr(claude, "research", boom)
     sid = add_card(client)
@@ -145,7 +147,7 @@ def test_manual_scan_of_selected_suppliers(client, monkeypatch):
     for sid in (a, b):
         client.post(f"/supplier/{sid}/edit", data={"company": f"Supplier {sid}"})
     calls = []
-    monkeypatch.setattr(claude, "research", lambda s, notes: calls.append(s["id"]) or dict(RESEARCH))
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None: calls.append(s["id"]) or dict(RESEARCH))
 
     page = client.get("/").text
     assert 'id="select-toggle"' in page and 'action="/scan"' in page
@@ -157,3 +159,54 @@ def test_manual_scan_of_selected_suppliers(client, monkeypatch):
 
     r = client.post("/scan", data={"ids": [a], "return_to": "//evil.example"}, follow_redirects=False)
     assert r.headers["location"] == "/"
+
+
+def test_tags_from_research_filter_and_edit(client, monkeypatch):
+    flour = add_card(client)
+    client.post(f"/supplier/{flour}/edit", data={"company": "Midwest Flour Co"})
+    assert [t["name"] for t in db.get_supplier(flour)["all_tags"]] == ["High-Gluten Flour", "SQF", "Midwest"]
+
+    # The next supplier's research sees the existing tags and odd spellings snap to them.
+    seen = {}
+    def research(s, notes, vocab=None):
+        seen["vocab"] = vocab
+        return dict(RESEARCH, tags=[{"group": "Product", "name": "bread bags"}, {"group": "Certification", "name": "sqf "}])
+    monkeypatch.setattr(claude, "research", research)
+    bags = add_card(client)
+    client.post(f"/supplier/{bags}/edit", data={"company": "Bag Co", "website": "bagco.com", "email": ""})
+    assert {"group": "Certification", "name": "SQF"} in seen["vocab"]
+    assert [t["name"] for t in db.get_supplier(bags)["all_tags"]] == ["bread bags", "SQF"]
+
+    # Filter: every selected tag must match.
+    names = lambda url: [s["company"] for s in db.search(tags=url)]
+    assert names(["SQF"]) == ["Bag Co", "Midwest Flour Co"]
+    assert names(["SQF", "Midwest"]) == ["Midwest Flour Co"]
+    page = client.get("/?tag=SQF&tag=Midwest").text
+    assert "Midwest Flour Co" in page and "Bag Co" not in page and "Filter by tags (2 selected)" in page
+    assert 'href="/?tag=SQF"' in page                     # removing the Midwest filter keeps SQF
+
+    # Staff remove a research tag and add their own; a rescan doesn't undo that.
+    client.post(f"/supplier/{flour}/edit", data={"company": "Midwest Flour Co", "keep_tags": ["SQF", "High-Gluten Flour"],
+                                                 "new_tags": "Sample Received, preferred", "new_tag_group": "Other"})
+    monkeypatch.setattr(claude, "research", lambda s, notes, vocab=None: dict(RESEARCH))
+    client.post(f"/supplier/{flour}/recheck")
+    tags = [t["name"] for t in db.get_supplier(flour)["all_tags"]]
+    assert "Midwest" not in tags and {"Sample Received", "preferred", "SQF"} <= set(tags)
+    assert "Sample Received" in client.get(f"/supplier/{flour}").text
+
+
+def test_old_database_gets_tag_columns(tmp_path, monkeypatch):
+    import sqlite3
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "rolodex.db")
+    monkeypatch.setattr(config, "CARDS_DIR", tmp_path / "cards")
+    conn = sqlite3.connect(tmp_path / "rolodex.db")
+    conn.execute("CREATE TABLE suppliers (id INTEGER PRIMARY KEY, company TEXT NOT NULL, contact_name TEXT DEFAULT '', "
+                 "contact_title TEXT DEFAULT '', phone TEXT DEFAULT '', email TEXT DEFAULT '', website TEXT DEFAULT '', "
+                 "address TEXT DEFAULT '', categories TEXT DEFAULT '[]', summary TEXT DEFAULT '', profile TEXT DEFAULT '{}', "
+                 "status TEXT DEFAULT 'new', needs_attention INTEGER DEFAULT 0, attention_note TEXT DEFAULT '', "
+                 "research_error TEXT DEFAULT '', created_at TEXT NOT NULL, last_checked TEXT, next_check TEXT)")
+    conn.execute("INSERT INTO suppliers (company, created_at) VALUES ('Old Co', '2026-01-01')")
+    conn.commit(); conn.close()
+    db.init()
+    assert db.all_suppliers()[0]["all_tags"] == []

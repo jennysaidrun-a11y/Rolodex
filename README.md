@@ -49,6 +49,12 @@ firewall. Either works and gives you an `https://` address:
 - **+ Add card**: take the front photo, optionally the back, then tap **Read card**. Check and fix the
   details (it warns if the company looks like one already on file), then tap
   **Save and research**. Research takes a few minutes and runs in the background.
+- **Tags** come from the research: each scan tags the supplier by Product (Bread Bags, High-Gluten
+  Flour), Certification (SQF, Organic, Kosher), Capability (Custom Printing, Nut-Free Facility),
+  Service area and Other, reusing tags already in the rolodex so spellings stay consistent. Open
+  **Filter by tags** on the search page and tap as many as you need; a supplier has to have every
+  tag you pick. Tap a tag on a profile to see every supplier with it. On **Edit**, untick a tag to
+  remove it (rescans won't bring it back) or type your own (e.g. "Sample Received", "Preferred").
 - **Notes** on each supplier record who stopped by, what they offered, quotes and samples. Notes
   are searchable and Claude reads them when answering questions.
 - **Needs attention** (checkbox on the search page) lists suppliers whose last check found something

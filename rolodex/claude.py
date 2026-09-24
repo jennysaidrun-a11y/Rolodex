@@ -9,6 +9,7 @@ from pathlib import Path
 import anthropic
 
 from . import config
+from .db import TAG_GROUPS
 
 CATEGORIES = [
     "Flour & grains", "Sweeteners", "Dairy & eggs", "Fats & oils", "Yeast & cultures",
@@ -84,6 +85,7 @@ RESEARCH_SCHEMA = _schema({
     "needs_attention": {"type": "boolean"},
     "attention_reason": STR,
     "sources": STR_LIST,
+    "tags": {"type": "array", "items": _schema({"group": {"type": "string", "enum": TAG_GROUPS}, "name": STR})},
 })
 
 ANSWER_SCHEMA = _schema({
@@ -148,7 +150,21 @@ def read_card(front: Path, back: Path | None) -> dict:
     return _json_result(response)
 
 
-def research(supplier: dict, notes: list[str]) -> dict:
+TAG_GUIDE = (
+    "tags: 5-15 short filter tags (1-3 words, Title Case) that buyers would filter on, each in a group:\n"
+    "- Product: specific things they sell, e.g. Bread Bags, Corrugated Boxes, High-Gluten Flour, "
+    "Sesame Seeds, Spiral Mixers, Conveyor Belting\n"
+    "- Certification: e.g. SQF, BRCGS, FSSC 22000, Organic, Kosher, Halal, Non-GMO Project, Gluten-Free "
+    "Certified (only if confirmed current)\n"
+    "- Capability: e.g. Nut-Free Facility, Custom Printing, Private Label, Bulk Totes, Same-Week Delivery, "
+    "Equipment Repair, 24/7 Service, Compostable\n"
+    "- Service area: e.g. Nationwide, Midwest, Kansas\n"
+    "- Other: e.g. Distributor, Manufacturer, Family-Owned, Recall History\n"
+    "Only tag what the sources support."
+)
+
+
+def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = None) -> dict:
     """Look the supplier up on the web and return a fresh profile, noting what changed since last time."""
     known = {k: supplier[k] for k in ("company", "contact_name", "phone", "email", "website", "address",
                                       "categories")}
@@ -174,7 +190,11 @@ def research(supplier: dict, notes: list[str]) -> dict:
         "changes_since_last_check: short bullets of what differs from the last check (empty on the first "
         "check). Set needs_attention for anything the bakery should look at: a recall or warning letter, a "
         "lost certification, a closure or acquisition, or a website/phone that no longer works. "
-        "The summary is 2-3 sentences on who they are and what they could supply us."
+        "The summary is 2-3 sentences on who they are and what they could supply us.\n\n"
+        + TAG_GUIDE
+        + ("\nTags already used in the rolodex (reuse these exact spellings whenever one fits; add a new tag "
+           "only for something none of them covers):\n"
+           + "\n".join(f"- {t['group']}: {t['name']}" for t in vocabulary) if vocabulary else "")
     )
     messages = [{"role": "user", "content": prompt}]
     for _ in range(6):   # web search can pause a long turn; resume it a few times
@@ -197,6 +217,7 @@ def _directory(suppliers: list[dict], notes: dict[int, list[str]]) -> str:
         p = s["profile"]
         rows.append({
             "id": s["id"], "company": s["company"], "status": s["status"], "categories": s["categories"],
+            "tags": [t["name"] for t in s.get("all_tags", [])],
             "contact": " ".join(x for x in (s["contact_name"], s["phone"], s["email"]) if x),
             "address": s["address"], "summary": s["summary"],
             "products": [x["name"] for x in p.get("products", [])],

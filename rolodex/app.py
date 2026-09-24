@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -26,6 +26,8 @@ from . import claude, config, db, recheck
 HERE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=HERE / "templates")
 # Links come from web research: only ever render http(s) ones.
+templates.env.globals["without_tag"] = lambda request, tag: "/?" + urlencode(
+    [(k, v) for k, v in request.query_params.multi_items() if not (k == "tag" and v == tag)])
 templates.env.filters["link"] = lambda u: u if str(u).lower().startswith(("http://", "https://")) else ""
 
 
@@ -81,9 +83,10 @@ def login(request: Request, password: str = Form(...)):
 # ---------- browse / search / ask ----------
 
 @app.get("/")
-def home(request: Request, q: str = "", category: str = "", attention: bool = False):
-    return page(request, "index.html", suppliers=db.search(q, category, attention), q=q, category=category,
-                attention=attention, categories=db.categories(),
+def home(request: Request, q: str = "", category: str = "", attention: bool = False,
+         tag: list[str] = Query([])):
+    return page(request, "index.html", suppliers=db.search(q, category, attention, tag), q=q, category=category,
+                attention=attention, categories=db.categories(), selected_tags=tag, tag_counts=db.tag_counts(),
                 attention_count=len(db.search(attention=True)), total=len(db.all_suppliers()))
 
 
@@ -160,19 +163,29 @@ def supplier(request: Request, supplier_id: int):
 def edit_form(request: Request, supplier_id: int, new: bool = False, error: str = ""):
     s = _get(supplier_id)
     return page(request, "edit.html", s=s, new=new, error=error, cards=db.cards_for(supplier_id),
-                all_categories=sorted(set(claude.CATEGORIES) | set(db.categories())),
+                all_categories=sorted(set(claude.CATEGORIES) | set(db.categories())), tag_groups=db.TAG_GROUPS,
                 duplicates=db.possible_duplicates(s["company"], s["website"], s["email"], exclude=supplier_id))
 
 
 @app.post("/supplier/{supplier_id}/edit")
 def edit(supplier_id: int, company: str = Form(...), contact_name: str = Form(""),
          contact_title: str = Form(""), phone: str = Form(""), email: str = Form(""), website: str = Form(""),
-         address: str = Form(""), categories: list[str] = Form([]), other_categories: str = Form("")):
+         address: str = Form(""), categories: list[str] = Form([]), other_categories: str = Form(""),
+         keep_tags: list[str] = Form([]), new_tags: str = Form(""), new_tag_group: str = Form("Other")):
     s = _get(supplier_id)
     cats = categories + [c.strip() for c in other_categories.split(",") if c.strip()]
+    # Tags: unticking a research tag removes it for good (rescans won't bring it back);
+    # typed-in tags are staff tags and are kept across rescans.
+    kept = {t.lower() for t in keep_tags}
+    added = db.clean_tags([{"group": new_tag_group, "name": n} for n in new_tags.split(",")])
+    added_names = {t["name"].lower() for t in added}
+    removed = ({n.lower() for n in s["removed_tags"]}
+               | {t["name"].lower() for t in s["tags"] if t["name"].lower() not in kept}) - added_names
+    staff = [t for t in s["staff_tags"] if t["name"].lower() in kept and t["name"].lower() not in added_names]
     db.update_supplier(supplier_id, company=company.strip() or "Unknown company", contact_name=contact_name,
                        contact_title=contact_title, phone=phone, email=email, website=website, address=address,
-                       categories=list(dict.fromkeys(cats)))
+                       categories=list(dict.fromkeys(cats)), staff_tags=staff + added,
+                       removed_tags=sorted(removed))
     if s["status"] == "new":   # first save of a new card: go research it
         recheck.queue(supplier_id)
     return back_to(f"/supplier/{supplier_id}")

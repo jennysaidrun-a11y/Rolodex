@@ -82,3 +82,21 @@ legend { font-weight: 600; font-size: .92rem; padding: 0 4px; }
             justify-content: space-between; align-items: center; gap: 10px; }
 .scan-bar.on { display: flex; }
 .scan-bar .check input { width: 20px; height: 20px; }
+.filters .wide { flex-basis: 100%; }
+.tag-filter summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.tag-group { margin: 8px 0; }
+.tag-group-name { display: block; font-size: .8rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
+                  letter-spacing: .04em; margin-bottom: 4px; }
+.chip.toggle { cursor: pointer; font-size: .9rem; }
+.chip.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.chip.toggle:has(input:checked), .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip .n { font-size: .75rem; opacity: .7; }
+a.chip { text-decoration: none; color: var(--ink); font-size: .85rem; }
+a.chip.on { color: #fff; }
+.active-tags { margin-top: 10px; align-items: center; }
+.profile-tags { margin: 8px 0 0; }
+.mini-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.mini { font-size: .72rem; padding: 1px 7px; border-radius: 99px; background: var(--bg); border: 1px solid var(--line); }
+.add-tags { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .add-tags { grid-template-columns: 1fr; } }

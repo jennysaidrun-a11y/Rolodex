@@ -19,7 +19,33 @@
     <label class="check"><input type="checkbox" name="attention" value="true" {% if attention %}checked{% endif %}
       onchange="this.form.submit()"> Needs attention ({{ attention_count }})</label>
     <button class="btn">Search</button>
+    {% if tag_counts %}
+    <details class="tag-filter wide" {% if selected_tags %}open{% endif %}>
+      <summary>Filter by tags{% if selected_tags %} ({{ selected_tags|length }} selected){% endif %}</summary>
+      <p class="muted">Suppliers must have every tag you pick.</p>
+      {% for group, tags in tag_counts.items() %}
+      <div class="tag-group">
+        <span class="tag-group-name">{{ group }}</span>
+        <div class="chips">
+          {% for name, n in tags %}
+          <label class="chip toggle"><input type="checkbox" name="tag" value="{{ name }}"
+            {% if name in selected_tags %}checked{% endif %} onchange="this.form.submit()"> {{ name }} <span class="n">{{ n }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </details>
+    {% endif %}
   </form>
+  {% if selected_tags %}
+  <div class="chips active-tags">
+    {% for t in selected_tags %}
+    <a class="chip on" href="{{ without_tag(request, t) }}"
+       title="Remove this tag filter">{{ t }} ✕</a>
+    {% endfor %}
+    <a class="muted" href="/">Clear all</a>
+  </div>
+  {% endif %}
 </section>
 
 <div class="list-head">
@@ -47,6 +73,7 @@
       {% if s.status == "new" %}<span class="tag">Not reviewed</span>{% endif %}
       <span class="muted">{{ s.categories|join(", ") }}{% if s.last_checked %} · scanned {{ s.last_checked[:10] }}{% endif %}</span>
       {% if s.summary %}<span class="summary">{{ s.summary }}</span>{% endif %}
+      {% if s.all_tags %}<span class="mini-tags">{% for t in s.all_tags[:8] %}<span class="mini">{{ t.name }}</span>{% endfor %}{% if s.all_tags|length > 8 %}<span class="muted">+{{ s.all_tags|length - 8 }}</span>{% endif %}</span>{% endif %}
     </a>
   </li>
   {% endfor %}

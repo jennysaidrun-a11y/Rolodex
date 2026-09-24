@@ -37,6 +37,24 @@
       <label>Other categories <span class="muted">(comma separated)</span>
         <input name="other_categories" value=""></label>
     </fieldset>
+    <fieldset class="wide">
+      <legend>Tags</legend>
+      {% if s.all_tags %}
+      <p class="muted">Untick a tag to remove it; it stays removed when the supplier is rescanned.</p>
+      <div class="chips">
+        {% for t in s.all_tags %}
+        <label class="chip"><input type="checkbox" name="keep_tags" value="{{ t.name }}" checked> {{ t.name }}
+          <span class="n">{{ t.group }}</span></label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted">Tags are added automatically when the supplier is researched. You can add your own now.</p>
+      {% endif %}
+      <div class="add-tags">
+        <label>Add tags <span class="muted">(comma separated)</span><input name="new_tags" placeholder="e.g. Sample Received, Preferred"></label>
+        <label>Group <select name="new_tag_group">{% for g in tag_groups %}<option {% if g == "Other" %}selected{% endif %}>{{ g }}</option>{% endfor %}</select></label>
+      </div>
+    </fieldset>
     <button class="btn big wide">{% if new %}Save and research this supplier{% else %}Save{% endif %}</button>
   </form>
   <form method="post" action="/supplier/{{ s.id }}/delete" onsubmit="return confirm('Delete this supplier and its card photos?')">
