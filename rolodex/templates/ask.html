@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block main %}
+<section class="card">
+  <p class="muted">You asked</p>
+  <h2>{{ question }}</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if answer %}<p class="answer">{{ answer }}</p>{% endif %}
+</section>
+{% if matches %}
+<ul class="list">
+  {% for s, why in matches %}
+  <li><a href="/supplier/{{ s.id }}"><strong>{{ s.company }}</strong>
+    {% if s.needs_attention %}<span class="tag warn">Needs attention</span>{% endif %}
+    <span class="muted">{{ s.categories|join(", ") }}</span><span class="summary">{{ why }}</span></a></li>
+  {% endfor %}
+</ul>
+{% endif %}
+<section class="card">
+  <form method="post" action="/ask" class="ask" onsubmit="this.querySelector('button').textContent='Thinking…'">
+    <textarea name="question" rows="2" required placeholder="Ask another question"></textarea>
+    <button class="btn">Ask</button>
+  </form>
+</section>
+{% endblock %}

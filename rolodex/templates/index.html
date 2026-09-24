@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block main %}
+<section class="card">
+  <h2>Ask Claude</h2>
+  <form method="post" action="/ask" class="ask" onsubmit="this.querySelector('button').textContent='Thinking…'">
+    <textarea name="question" rows="2" required
+      placeholder="e.g. Who can supply compostable bread bags, SQF certified, delivering to us?"></textarea>
+    <button class="btn">Ask</button>
+  </form>
+</section>
+
+<section class="card">
+  <form method="get" action="/" class="filters">
+    <input type="search" name="q" value="{{ q }}" placeholder="Keyword: company, product, city, note…">
+    <select name="category" onchange="this.form.submit()">
+      <option value="">All categories</option>
+      {% for c in categories %}<option {% if c == category %}selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+    <label class="check"><input type="checkbox" name="attention" value="true" {% if attention %}checked{% endif %}
+      onchange="this.form.submit()"> Needs attention ({{ attention_count }})</label>
+    <button class="btn">Search</button>
+  </form>
+</section>
+
+<p class="muted">{{ suppliers|length }} of {{ total }} suppliers</p>
+{% if not total %}
+<section class="card empty">
+  <p>No suppliers yet. Tap <a href="/add">+ Add card</a> and take a photo of the first business card.</p>
+</section>
+{% endif %}
+<ul class="list">
+  {% for s in suppliers %}
+  <li>
+    <a href="/supplier/{{ s.id }}">
+      <strong>{{ s.company }}</strong>
+      {% if s.needs_attention %}<span class="tag warn">Needs attention</span>{% endif %}
+      {% if s.status in ("queued", "researching") %}<span class="tag">Researching…</span>{% endif %}
+      {% if s.status == "closed" %}<span class="tag warn">Closed</span>{% endif %}
+      {% if s.status == "new" %}<span class="tag">Not reviewed</span>{% endif %}
+      <span class="muted">{{ s.categories|join(", ") }}</span>
+      {% if s.summary %}<span class="summary">{{ s.summary }}</span>{% endif %}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Supplier Rolodex{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/icon.svg">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <meta name="theme-color" content="#3b2f2a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Suppliers">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">Supplier Rolodex</a>
+    <nav><a href="/">Search</a><a class="btn small" href="/add">+ Add card</a></nav>
+  </header>
+  <main>{% block main %}{% endblock %}</main>
+</body>
+</html>

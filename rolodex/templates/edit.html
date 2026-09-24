@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block main %}
+<section class="card">
+  <h1>{% if new %}Check the card details{% else %}Edit {{ s.company }}{% endif %}</h1>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if duplicates %}
+  <div class="notice">
+    <strong>This might already be in the rolodex:</strong>
+    {% for d in duplicates %}<a href="/supplier/{{ d.id }}">{{ d.company }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
+    If it's the same business, add this rep as a note there and delete this new entry (button at the bottom).
+  </div>
+  {% endif %}
+  {% if cards %}
+  <div class="cards">
+    {% for c in cards[:1] %}
+      <a href="/cards/{{ c.front }}" target="_blank"><img src="/cards/{{ c.front }}" alt="Card front"></a>
+      {% if c.back %}<a href="/cards/{{ c.back }}" target="_blank"><img src="/cards/{{ c.back }}" alt="Card back"></a>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+  <form method="post" action="/supplier/{{ s.id }}/edit" class="grid">
+    <label>Company <input name="company" value="{{ s.company }}" required></label>
+    <label>Contact name <input name="contact_name" value="{{ s.contact_name }}"></label>
+    <label>Title <input name="contact_title" value="{{ s.contact_title }}"></label>
+    <label>Phone <input name="phone" value="{{ s.phone }}" inputmode="tel"></label>
+    <label>Email <input name="email" value="{{ s.email }}" inputmode="email"></label>
+    <label>Website <input name="website" value="{{ s.website }}" inputmode="url"></label>
+    <label class="wide">Address <input name="address" value="{{ s.address }}"></label>
+    <fieldset class="wide">
+      <legend>What they supply</legend>
+      <div class="chips">
+        {% for c in all_categories %}
+        <label class="chip"><input type="checkbox" name="categories" value="{{ c }}"
+          {% if c in s.categories %}checked{% endif %}> {{ c }}</label>
+        {% endfor %}
+      </div>
+      <label>Other categories <span class="muted">(comma separated)</span>
+        <input name="other_categories" value=""></label>
+    </fieldset>
+    <button class="btn big wide">{% if new %}Save and research this supplier{% else %}Save{% endif %}</button>
+  </form>
+  <form method="post" action="/supplier/{{ s.id }}/delete" onsubmit="return confirm('Delete this supplier and its card photos?')">
+    <button class="btn danger small">Delete this entry</button>
+  </form>
+</section>
+{% endblock %}

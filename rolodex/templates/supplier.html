@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ s.company }} · Supplier Rolodex{% endblock %}
+{% macro src(url) %}{% if url|link %} <a class="src" href="{{ url|link }}" target="_blank" rel="noopener">source</a>{% endif %}{% endmacro %}
+{% block main %}
+<section class="card">
+  <div class="head">
+    <div>
+      <h1>{{ s.company }}</h1>
+      <p class="muted">{{ s.categories|join(" · ") }}</p>
+    </div>
+    <a class="btn small ghost" href="/supplier/{{ s.id }}/edit">Edit</a>
+  </div>
+
+  {% if s.status in ("queued", "researching") %}
+    <p class="notice">Claude is researching this supplier. This takes a few minutes; refresh the page to see the result.</p>
+  {% elif s.status == "error" %}
+    <p class="error">The last research attempt failed: {{ s.research_error }} It will try again tomorrow,
+      or use "Recheck now".</p>
+  {% elif s.status == "new" %}
+    <p class="notice">Card not reviewed yet. <a href="/supplier/{{ s.id }}/edit?new=1">Check the details</a> to start research.</p>
+  {% endif %}
+  {% if s.needs_attention %}
+  <div class="alert">
+    <strong>Needs attention:</strong> {{ s.attention_note }}
+    <form method="post" action="/supplier/{{ s.id }}/reviewed"><button class="btn small">Mark as reviewed</button></form>
+  </div>
+  {% endif %}
+
+  <dl class="contact">
+    {% if s.contact_name %}<dt>Contact</dt><dd>{{ s.contact_name }}{% if s.contact_title %}, {{ s.contact_title }}{% endif %}</dd>{% endif %}
+    {% if s.phone %}<dt>Phone</dt><dd>{% for n in s.phone.split(" / ") %}<a href="tel:{{ n }}">{{ n }}</a>{% if not loop.last %} / {% endif %}{% endfor %}</dd>{% endif %}
+    {% if s.email %}<dt>Email</dt><dd><a href="mailto:{{ s.email }}">{{ s.email }}</a></dd>{% endif %}
+    {% if s.website %}<dt>Website</dt><dd><a href="{{ (s.website if '://' in s.website else 'https://' ~ s.website)|link }}" target="_blank" rel="noopener">{{ s.website }}</a></dd>{% endif %}
+    {% if s.address %}<dt>Address</dt><dd>{{ s.address }}</dd>{% endif %}
+  </dl>
+  {% if s.summary %}<p class="answer">{{ s.summary }}</p>{% endif %}
+  <p class="muted">
+    {% if s.last_checked %}Last checked {{ s.last_checked[:10] }} · next check {{ s.next_check }}{% else %}Not researched yet{% endif %}
+  </p>
+  <form method="post" action="/supplier/{{ s.id }}/recheck"><button class="btn small ghost"
+    {% if s.status in ("queued", "researching", "new") %}disabled{% endif %}>Recheck now</button></form>
+</section>
+
+{% if p %}
+{% if p.changes_since_last_check %}
+<section class="card"><h2>Changed since the last check</h2>
+  <ul>{% for c in p.changes_since_last_check %}<li>{{ c }}</li>{% endfor %}</ul></section>
+{% endif %}
+
+<section class="card"><h2>Products &amp; services</h2>
+  {% if p.products %}<ul>{% for x in p.products %}<li><strong>{{ x.name }}</strong>{% if x.details %}: {{ x.details }}{% endif %}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">Nothing found.</p>{% endif %}
+  <h3>Pricing</h3>
+  {% if p.pricing %}<ul>{% for x in p.pricing %}<li>{{ x.item }}: {{ x.price }}{{ src(x.source) }}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">No published pricing. Ask the rep for a quote.</p>{% endif %}
+  {% if p.stock_and_lead_times %}<h3>Stock &amp; lead times</h3><p>{{ p.stock_and_lead_times }}</p>{% endif %}
+  {% if p.minimum_order %}<h3>Minimum order</h3><p>{{ p.minimum_order }}</p>{% endif %}
+</section>
+
+<section class="card"><h2>Locations</h2>
+  {% if p.locations %}<ul>{% for x in p.locations %}<li>{{ x.kind }}: {{ x.address }}</li>{% endfor %}</ul>{% endif %}
+  {% if p.service_area %}<p><strong>Serves:</strong> {{ p.service_area }}</p>{% endif %}
+  {% if not p.locations and not p.service_area %}<p class="muted">Nothing found.</p>{% endif %}
+</section>
+
+<section class="card"><h2>Certifications</h2>
+  {% if p.certifications %}<ul>{% for x in p.certifications %}<li>{{ x.name }}: {{ x.status }}{{ src(x.source) }}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">None found.</p>{% endif %}
+</section>
+
+<section class="card"><h2>Regulatory</h2>
+  {% if p.regulatory %}<ul>{% for x in p.regulatory %}<li><strong>{{ x.date }} {{ x.kind }}</strong>: {{ x.description }}{{ src(x.source) }}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">No recalls, warning letters or enforcement actions found.</p>{% endif %}
+</section>
+
+<section class="card"><h2>Reviews &amp; reputation</h2>
+  <p>{{ p.reviews.summary or "Nothing found." }}</p>
+  {% for u in p.reviews.sources %}{{ src(u) }}{% endfor %}
+  {% if p.news %}<h3>News</h3>
+  <ul>{% for x in p.news %}<li>{{ x.date }}: {{ x.headline }}{{ src(x.source) }}</li>{% endfor %}</ul>{% endif %}
+</section>
+
+{% if p.sources %}
+<section class="card"><h2>Sources</h2>
+  <ul class="sources">{% for u in p.sources if u|link %}<li><a href="{{ u|link }}" target="_blank" rel="noopener">{{ u }}</a></li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endif %}
+
+<section class="card" id="notes"><h2>Notes</h2>
+  <form method="post" action="/supplier/{{ s.id }}/notes" class="note-form">
+    <textarea name="text" rows="2" required placeholder="Who stopped by, what they offered, quotes, samples…"></textarea>
+    <input name="author" placeholder="Your name">
+    <button class="btn small">Add note</button>
+  </form>
+  <ul class="notes">
+    {% for n in notes %}<li><span class="muted">{{ n.created_at[:10] }}{% if n.author %} · {{ n.author }}{% endif %}</span>{{ n.text }}</li>{% endfor %}
+  </ul>
+</section>
+
+{% if cards %}
+<section class="card"><h2>Business cards</h2>
+  <div class="cards">
+    {% for c in cards %}
+      <a href="/cards/{{ c.front }}" target="_blank"><img src="/cards/{{ c.front }}" alt="Card front"></a>
+      {% if c.back %}<a href="/cards/{{ c.back }}" target="_blank"><img src="/cards/{{ c.back }}" alt="Card back"></a>{% endif %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if checks %}
+<section class="card"><h2>Check history</h2>
+  <ul>{% for c in checks %}<li>{{ c.checked_at[:10] }}{% if c.changes %}: {{ c.changes|replace("\n", "; ") }}{% endif %}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

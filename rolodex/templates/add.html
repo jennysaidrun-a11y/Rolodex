@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block main %}
+<section class="card narrow">
+  <h1>Add a business card</h1>
+  <form method="post" action="/add" enctype="multipart/form-data"
+        onsubmit="const b=this.querySelector('button'); b.disabled=true; b.textContent='Reading the card…'">
+    <label class="photo">Front of card
+      <input type="file" name="front" accept="image/*" capture="environment" required>
+    </label>
+    <label class="photo">Back of card <span class="muted">(if it has anything on it)</span>
+      <input type="file" name="back" accept="image/*" capture="environment">
+    </label>
+    <button class="btn big">Read card</button>
+  </form>
+  <p class="muted">Lay the card flat on a dark surface and fill the frame. Claude reads it in a few seconds;
+    you check the details on the next screen, then it researches the company.</p>
+</section>
+{% endblock %}
