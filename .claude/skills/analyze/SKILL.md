@@ -110,6 +110,12 @@ ArtifactData update url=PAGE collection=suppliers doc_id=<supplier_id> file_path
 again next run): `python tools/analyze.py fail work/export <supplier_id> work/update.json "why"`,
 add `"progress": null` to that file, and write it.
 
+## 3b. Pick up anything added meanwhile
+
+People keep adding cards while you work. Before reporting, export again and run `plan`: if it
+lists anything, merge those supplier ids into `planned` on config/analysis (keep the ones already
+there) and do steps 2-3 for them. Repeat until `plan` is empty.
+
 ## 4. Report
 
 A short summary: cards/pamphlets read, suppliers researched, PDFs saved, and anything flagged

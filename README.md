@@ -14,8 +14,10 @@ signed in to Claude. (Source: `artifact/index.html`.)
 
 - **Sharing**: use the page's Share menu. People who add cards and pamphlets need **Editor**;
   **Contributor** can edit details, add notes and tags; **Viewer** can search.
-- **+ Add**: a business card (front, and back if needed) or a pamphlet (just the cover). Take the
-  photo or pick it from your library. Claude reads it on the spot and you check the details.
+- **+ Add** works as a queue: snap a business card (front, and back if needed) or a pamphlet
+  cover, tap **Add to queue**, and the form is ready for the next one while it uploads and Claude
+  reads it in the background. **Several at once** takes many library photos, one company each.
+  The batch list shows each one's progress; **Done: analyze all** researches the whole batch.
 - **Research** (web lookups, the pamphlet's PDF, the 3-month rechecks) is done by Claude Code in the
   cloud. When you've added your cards, tap **Done adding: analyze now**: it starts a Claude Code
   session (the routine "Rolodex: analyze new cards and rechecks", `trig_01Dq17WHzafvRP6ZmAZvrhb6`)

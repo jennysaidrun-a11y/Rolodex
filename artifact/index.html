@@ -38,7 +38,8 @@ h1 { font-size: 1.6rem; } h2 { font-size: 1.2rem; } h3 { font-size: 1rem; font-f
 .brand { font-family: var(--display); font-size: 1.15rem; color: var(--brand-ink); text-decoration: none; white-space: nowrap; }
 .top nav { display: flex; gap: 14px; align-items: center; }
 .top nav a { color: var(--brand-ink); text-decoration: none; white-space: nowrap; }
-main { max-width: 880px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 64px; display: grid; gap: 14px; }
+main { max-width: 880px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 64px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+input[type=file] { max-width: 100%; min-width: 0; font-size: .9rem; }
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
 .muted { color: var(--muted); font-size: .92rem; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -184,7 +185,7 @@ const S = {
   suppliers: [], categoriesDoc: null,
   filters: { q: "", cats: new Set(), tags: new Set(), attention: false },
   selecting: false, selected: new Set(),
-  reading: new Set(), flash: null, busy: false, ask: null, confirmDelete: false,
+  reading: new Set(), jobs: [], addKind: "card", flash: null, busy: false, ask: null, confirmDelete: false,
 };
 const app = document.getElementById("app");
 
@@ -395,7 +396,10 @@ function route() {
 function render() {
   if (!S.ready) return;
   // Never redraw the Add screen under someone who has picked a photo: it would clear their pick.
-  if (S.addDirty && route().view === "add" && !S.busy) return;
+  // On the Add screen, background updates only refresh the batch list: redrawing the form
+  // would clear a picked photo or the "Added" message.
+  { const r = route();
+    if (r.view === "add" && S.addShown === (r.id || "new") && document.getElementById("add-form")) { renderBatch(); return; } }
   if (S.dbMissing) {
     app.innerHTML = `<section class="panel"><h1>Supplier Rolodex</h1><p>Open this page on claude.ai, signed in with your company account, to use the rolodex.</p></section>`;
     return;
@@ -514,6 +518,13 @@ async function cancelAnalysis() {
 }
 async function analyzeNow() {
   if (!S.mcp || S.starting) return;
+  if (["requested", "running"].includes(S.analysis?.state)) {
+    // One run at a time: the running one checks for new work before it finishes.
+    const planned = [...new Set([...(S.analysis.planned || []), ...S.suppliers.filter(isWaiting).map(s => s.id)])];
+    try { await write("__analysis", () => S.db.doc("config/analysis").update({ planned })); } catch {}
+    flash("ok", "An analysis is already running; it picks these up before it finishes.");
+    S._keepScroll = true; render(); return;
+  }
   S.starting = true; S._keepScroll = true; render();
   const planned = S.suppliers.filter(isWaiting).map(s => s.id);
   try { await write("__analysis", () => S.db.doc("config/analysis").set({ state: "requested", requested_at: nowIso() + "Z", planned, current: "" })); } catch {}
@@ -897,62 +908,139 @@ function wireConfirm(onYes) {
 function renderAdd(existingId) {
   const existing = existingId ? byId(existingId) : null;
   if (!S.assets) {
-    app.innerHTML = `<section class="panel"><h1>Add a supplier</h1><p>Adding photos needs Editor access to this page. Ask its owner to share it with you as an Editor.</p><p><a href="#home">Back to search</a></p></section>`;
+    app.innerHTML = `<section class="panel"><h1>Add a supplier</h1><p>Adding photos needs Editor access to this page. Ask its owner to share it with you as an Editor.</p></section>`;
     return;
   }
+  S.addShown = existingId || "new";
   app.innerHTML = `
     ${flashHtml()}
-    <section class="panel" style="max-width:520px;width:100%;justify-self:center">
-      <h1>${existing ? "Add to " + esc(existing.company) : "Add a supplier"}</h1>
+    <section class="panel" style="max-width:560px;width:100%;justify-self:center">
+      <h1>${existing ? "Add to " + esc(existing.company) : "Add suppliers"}</h1>
       <form id="add-form" style="display:grid;gap:12px">
         <div class="kind-switch" role="radiogroup" aria-label="What are you adding?">
-          <label><input type="radio" name="kind" value="card" checked> Business card</label>
-          <label><input type="radio" name="kind" value="pamphlet"> Pamphlet / brochure</label>
+          <label><input type="radio" name="kind" value="card" ${S.addKind !== "pamphlet" ? "checked" : ""}> Business card</label>
+          <label><input type="radio" name="kind" value="pamphlet" ${S.addKind === "pamphlet" ? "checked" : ""}> Pamphlet / brochure</label>
         </div>
         <label class="drop"><span data-k="card">Front of card</span><span data-k="pamphlet" hidden>Front cover of the pamphlet</span>
-          <input type="file" id="front" accept="image/*" required></label>
+          <input type="file" id="front" accept="image/*"></label>
         <label class="drop" data-k="card">Back of card <span class="muted">(if it has anything on it)</span>
           <input type="file" id="back" accept="image/*"></label>
-        <p class="muted" data-k="pamphlet" hidden style="margin:0">Just the cover. Claude finds the full PDF version online (usually on the supplier's website) and keeps a copy with the supplier.</p>
-        <button class="btn big" id="add-btn" ${S.busy ? "disabled" : ""}>${S.busy ? esc(S.busy) : "Save"}</button>
+        <p class="muted" data-k="pamphlet" hidden style="margin:0">Just the cover. Claude finds the full PDF version online and keeps a copy with the supplier.</p>
+        <button class="btn big" id="add-btn">${existing ? "Save" : "Add to queue"}</button>
+        ${existing ? "" : `<details><summary>Several at once from your photo library</summary>
+          <label class="drop" style="margin-top:8px">One photo per company (fronts only)
+            <input type="file" id="many" accept="image/*" multiple></label>
+          <button type="button" class="btn ghost" id="many-btn" style="margin-top:8px">Add these to the queue</button>
+        </details>`}
       </form>
-      <p class="muted" style="margin:0">Take a photo or pick one from your library. ${S.imagesOK ? "Claude reads it right away. When you've added everything, tap \"Done adding: analyze now\" for the web research." : "When you've added everything, tap \"Done adding: analyze now\" and Claude reads and researches it."}</p>
-    </section>`;
+      <p class="muted" style="margin:0">Take a photo or pick one from your library. ${existing ? "" : "After each one the form clears for the next; everything uploads and gets read in the background."}</p>
+    </section>
+    <section class="panel" id="batch" style="max-width:560px;width:100%;justify-self:center" ${S.jobs.length ? "" : "hidden"}></section>`;
+  renderBatch();
   const form = app.querySelector("#add-form");
+  const kindNow = () => form.querySelector("input[name=kind]:checked").value;
   const show = () => {
-    const kind = form.querySelector("input[name=kind]:checked").value;
-    form.querySelectorAll("[data-k]").forEach(el => { el.hidden = el.dataset.k !== kind; });
+    S.addKind = kindNow();
+    form.querySelectorAll("[data-k]").forEach(el => { el.hidden = el.dataset.k !== S.addKind; });
   };
   form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
-  form.querySelectorAll("input[type=file]").forEach(inp => inp.addEventListener("change", () => { S.addDirty = [...form.querySelectorAll("input[type=file]")].some(i => i.files.length); }));
+  const pickedAny = () => [...form.querySelectorAll("input[type=file]")].some(i => i.files.length);
+  form.querySelectorAll("input[type=file]").forEach(inp => inp.addEventListener("change", () => { S.addDirty = pickedAny(); }));
   show();
-  form.addEventListener("submit", async e => {
+  form.addEventListener("submit", e => {
     e.preventDefault();
-    if (S.busy) return;
-    S.addDirty = false;
-    const kind = form.querySelector("input[name=kind]:checked").value;
+    const kind = kindNow();
     const files = [form.querySelector("#front").files[0], kind === "card" ? form.querySelector("#back").files[0] : null].filter(Boolean);
-    if (!files.length) return;
-    await addPhotos(kind, files, existing);
+    if (!files.length) { flashInline(form, "Pick a photo first."); return; }
+    enqueue({ kind, files, existingId: existing?.id || null });
+    form.querySelector("#front").value = ""; form.querySelector("#back").value = "";
+    S.addDirty = pickedAny();
+    if (existing) { flash("ok", "Saved ✓ It's being read now."); finishTo("s-" + existing.id); return; }
+    flashInline(form, "Added to the queue ✓ Ready for the next one.");
+    form.querySelector("#front").focus();
+  });
+  app.querySelector("#many-btn")?.addEventListener("click", () => {
+    const inp = app.querySelector("#many");
+    const files = [...inp.files];
+    if (!files.length) { flashInline(form, "Pick the photos first."); return; }
+    for (const f of files) enqueue({ kind: kindNow(), files: [f], existingId: null });
+    inp.value = ""; S.addDirty = pickedAny();
+    flashInline(form, `${plural(files.length, "photo")} added to the queue ✓`);
   });
 }
+function flashInline(form, text) {
+  let el = form.querySelector(".inline-msg");
+  if (!el) { el = document.createElement("p"); el.className = "success inline-msg"; el.style.margin = "0"; form.append(el); }
+  el.textContent = text;
+}
 
-async function addPhotos(kind, files, existing) {
-  S.busy = "Uploading…"; render();
-  let blobs = [], ids = [];
+/* ---------- the add queue: uploads one at a time, reads in the background ---------- */
+let uploadChain = Promise.resolve(), readChain = Promise.resolve();
+const JOB_TEXT = { waiting: "Waiting to upload", uploading: "Uploading…", saved: "Saved, waiting to be read", reading: "Claude is reading it…",
+                   read: "Read", unread: "Saved; the analysis will read it", failed: "Didn't upload" };
+function enqueue({ kind, files, existingId }) {
+  const job = { key: rid(), kind, files, existingId, status: "waiting", supplierId: existingId, label: "", error: "",
+                thumb: (() => { try { return URL.createObjectURL(files[0]); } catch { return ""; } })() };
+  S.jobs.push(job);
+  renderBatch();
+  uploadChain = uploadChain.then(() => uploadJob(job));
+  return job;
+}
+function setJob(job, patch) { Object.assign(job, patch); renderBatch(); }
+function renderBatch() {
+  const el = document.getElementById("batch");
+  if (!el) return;
+  el.hidden = !S.jobs.length;
+  if (!S.jobs.length) return;
+  const busy = S.jobs.filter(j => ["waiting", "uploading", "saved", "reading"].includes(j.status)).length;
+  const saved = S.jobs.filter(j => j.supplierId && j.status !== "failed").length;
+  el.innerHTML = `
+    <div class="between"><h2>This batch (${S.jobs.length})</h2>${busy ? `<span class="muted">${busy} still working…</span>` : `<span class="muted">All saved</span>`}</div>
+    <ul class="list">${S.jobs.map((j, i) => `<li><div class="item" style="grid-template-columns:56px 1fr;display:grid;align-items:center;gap:10px">
+      ${j.thumb ? `<img src="${esc(j.thumb)}" alt="" style="width:56px;height:40px;object-fit:cover;border-radius:6px">` : `<span></span>`}
+      <span><strong>${j.label ? esc(j.label) : `${j.kind === "pamphlet" ? "Pamphlet" : "Card"} ${i + 1}`}</strong><br>
+      <span class="muted">${esc(JOB_TEXT[j.status] || j.status)}${j.error ? ": " + esc(j.error) : ""}</span>
+      ${j.status === "failed" ? ` <button type="button" class="copy" data-retry="${esc(j.key)}">Try again</button>` : ""}
+      ${j.supplierId && byId(j.supplierId) ? ` · <a href="#s-${esc(j.supplierId)}">open</a>` : ""}</span></div></li>`).join("")}</ul>
+    <div class="row">
+      ${S.mcp && S.canWrite !== false ? `<button class="btn" id="batch-analyze" ${saved && !busy ? "" : "disabled"}>${busy ? "Wait for uploads…" : `Done: analyze all (${saved})`}</button>` : ""}
+      <button class="btn ghost" id="batch-done" ${busy ? "disabled" : ""}>Done, analyze later</button>
+    </div>`;
+  el.querySelectorAll("[data-retry]").forEach(b => b.addEventListener("click", () => {
+    const job = S.jobs.find(j => j.key === b.dataset.retry);
+    if (job) { setJob(job, { status: "waiting", error: "" }); uploadChain = uploadChain.then(() => uploadJob(job)); }
+  }));
+  el.querySelector("#batch-analyze")?.addEventListener("click", async () => {
+    S.jobs = []; S.addDirty = false;
+    navigate("home", false);
+    await analyzeNow();
+  });
+  el.querySelector("#batch-done")?.addEventListener("click", () => {
+    S.jobs = []; S.addDirty = false;
+    flash("ok", "Saved. Tap \"Done adding: analyze now\" whenever you're ready; tonight's run does it otherwise.");
+    navigate("home", false);
+  });
+}
+window.addEventListener("beforeunload", e => {
+  if (S.jobs.some(j => ["waiting", "uploading"].includes(j.status))) { e.preventDefault(); e.returnValue = ""; }
+});
+
+async function uploadJob(job) {
+  setJob(job, { status: "uploading" });
+  let blobs, ids = [];
   try {
-    blobs = await Promise.all(files.map(shrink));
+    blobs = await Promise.all(job.files.map(shrink));
     for (const b of blobs) ids.push((await S.assets.upload(b, { type: "image/jpeg" })).id);
   } catch (e) {
-    S.busy = false;
-    flash("error", { too_large: "That photo is too large. Try a smaller one.", unsupported_type: "That file isn't a photo the rolodex can store. Use a JPEG or PNG.", quota_or_state: "The rolodex's photo storage is full." }[e?.code] || "The photo didn't upload. Check your connection and try again.");
-    render(); return;
+    setJob(job, { status: "failed", error: { too_large: "photo too large", unsupported_type: "not a JPEG or PNG", quota_or_state: "photo storage is full" }[e?.code] || "check your connection" });
+    return;
   }
-  const doc = { id: rid(), kind, photos: ids, added_at: nowIso(), read_at: null, title: "", pdf_url: "", pdf_asset: "" };
-  let id = existing?.id;
+  const doc = { id: rid(), kind: job.kind, photos: ids, added_at: nowIso(), read_at: null, title: "", pdf_url: "", pdf_asset: "" };
+  let id = job.existingId;
   try {
-    if (existing) {
-      await write(id, () => supRef(id).update({ docs: [...(existing.docs || []), doc] }));
+    if (id) {
+      const s = byId(id);
+      await write(id, () => supRef(id).update({ docs: [...(s?.docs || []), doc] }));
     } else {
       const ref = S.db.collection("suppliers").doc();
       id = ref.id;
@@ -963,19 +1051,17 @@ async function addPhotos(kind, files, existing) {
         created_at: nowIso(), last_checked: "", next_check: "",
       }));
     }
-  } catch (e) { S.busy = false; handleWriteError(e); return; }
-
-  // Saved. Show it right away; Claude reads the photo in the background.
-  S.busy = false;
-  const reading = S.sample && S.imagesOK;
-  flash("ok", reading ? "Saved ✓ Claude is reading it now; the details fill in below in a moment. Add more, or tap \"Done adding: analyze now\" when you're finished."
-                      : "Saved ✓ Add more, or tap \"Done adding: analyze now\" when you're finished.");
-  if (existing) finishTo("s-" + id); else navigate("s-" + id, false);
-  if (reading) readInBackground(id, doc.id, kind, blobs);
+  } catch (e) {
+    await dropAssets(ids);
+    setJob(job, { status: "failed", error: e?.code === "quota_exceeded" ? "the rolodex is full" : "couldn't save" });
+    return;
+  }
+  setJob(job, { status: S.sample && S.imagesOK ? "saved" : "unread", supplierId: id });
+  if (S.sample && S.imagesOK) readChain = readChain.then(() => readInBackground(id, doc.id, job.kind, blobs, job));
 }
 
-async function readInBackground(id, docId, kind, blobs) {
-  S.reading.add(docId); S._keepScroll = true; render();
+async function readInBackground(id, docId, kind, blobs, job) {
+  S.reading.add(docId); if (job) setJob(job, { status: "reading" }); S._keepScroll = true; render();
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 90000);   // don't hang: the analysis reads it otherwise
   try {
@@ -983,12 +1069,10 @@ async function readInBackground(id, docId, kind, blobs) {
     const fresh = byId(id);
     if (fresh && (fresh.docs || []).some(d => d.id === docId && !d.read_at)) {
       await write(id, () => supRef(id).update(applyReading(fresh, docId, reading)));
-      flash("ok", `Read: ${reading.company || "card"}. Check the details, and tap Edit to fix anything.`);
     }
+    if (job) setJob(job, { status: "read", label: reading.company || "" });
   } catch (e) {
-    flash("notice", e?.code === "not_granted"
-      ? "Saved. You didn't allow Claude to read photos on this page, so the analysis will read it."
-      : "Saved. Claude couldn't read it quickly here, so the analysis will read it. You can type the details in with Edit.");
+    if (job) setJob(job, { status: "unread" });
   } finally {
     clearTimeout(timer);
     S.reading.delete(docId); S._keepScroll = true; render();
@@ -1072,7 +1156,7 @@ function renderCategories() {
 /* ---------- start ---------- */
 setInterval(() => { if (analysisProgress() && !document.hidden && !S.confirmDelete && !document.activeElement?.matches("input, textarea, select")) { S._keepScroll = true; render(); } }, 30000);
 window.addEventListener("hashchange", () => {
-  S.addDirty = false;
+  S.addDirty = false; S.addShown = null;
   if (!skipPush && lastState && lastState.hash !== hashNow()) { trail.push(lastState); if (trail.length > 100) trail.shift(); }
   skipPush = false;
   S.confirmDelete = false; window.scrollTo(0, 0); render();
