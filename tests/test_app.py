@@ -17,7 +17,8 @@ CARD = {"document_title": "", "company": "Midwest Flour Co", "contact_name": "Da
         "products_mentioned": ["Bread flour", "Whole wheat"], "other_text": "SQF Level 2"}
 
 RESEARCH = {"business_status": "active", "summary": "Regional flour mill supplying bakeries.",
-            "categories": ["Flour & grains"], "products": [{"name": "High-gluten flour", "details": "50 lb bags"}],
+            "categories": ["Flour & grains"], "products": [{"name": "High-gluten flour", "details": "50 lb bags", "image_url": "https://mwf.example/img/hg.jpg",
+                          "page_url": "https://mwf.example/high-gluten"}],
             "pricing": [{"item": "High-gluten flour, 50 lb (WebstaurantStore)", "price": "$32.99", "unit": "per 50 lb bag",
                          "kind": "distributor_listing", "source": "https://www.example.com/flour", "as_of": "2026-09"}],
             "pricing_summary": "Quote only; distributors list about $30-35 per 50 lb bag.",

@@ -117,6 +117,14 @@ ul.facts { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
 .confirm { display: grid; gap: 8px; }
 .loading { color: var(--muted); padding: 24px 0; text-align: center; }
 .show-sm { display: none; }
+.catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.product { display: grid; gap: 4px; align-content: start; padding: 8px; border: 1px solid var(--line); border-radius: 10px;
+           background: var(--card); color: var(--ink); text-decoration: none; font-size: .9rem; min-width: 0; }
+a.product[href]:hover { border-color: var(--accent); }
+.product img { width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; border-radius: 6px; }
+.product .muted { font-size: .8rem; overflow-wrap: anywhere; }
+.thumbs { display: flex; gap: 6px; margin-top: 6px; overflow: hidden; }
+.thumbs img { width: 52px; height: 52px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 6px; flex: none; }
 .progress { height: 12px; border-radius: 99px; background: var(--card); border: 1px solid var(--line); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .6s ease; min-width: 12px; }
 .progress.indeterminate > span { width: 35%; animation: slide 1.4s ease-in-out infinite; }
@@ -303,6 +311,7 @@ async function shrink(file) {
     return blob || file;
   } catch { return file; }
 }
+const catalogPhotos = p => (p?.products || []).filter(x => x.image_asset);
 const blobUrl = id => "/_blob/" + encodeURIComponent(id);
 
 /* ---------- reading a card or pamphlet cover with Claude (in the page) ---------- */
@@ -597,6 +606,7 @@ function renderHome() {
         <a class="item" href="#s-${esc(s.id)}"><span><strong>${esc(s.company)}</strong>${statusTags(s)}</span>
           <span class="muted">${esc((s.categories || []).join(", "))}${s.last_checked ? ` · researched ${esc(s.last_checked.slice(0, 10))}` : ""}</span>
           ${s.summary ? `<span>${esc(s.summary)}</span>` : ""}
+          ${catalogPhotos(s.profile).length ? `<span class="thumbs">${catalogPhotos(s.profile).slice(0, 5).map(x => `<img src="${esc(blobUrl(x.image_asset))}" alt="${esc(x.name)}" title="${esc(x.name)}" loading="lazy">`).join("")}</span>` : ""}
           ${tags.length ? `<span class="mini-tags">${tags.slice(0, 8).map(t => `<span class="mini">${esc(t.name)}</span>`).join("")}${tags.length > 8 ? `<span class="muted">+${tags.length - 8}</span>` : ""}</span>` : ""}
         </a></li>`; }).join("")}</ul>
     ${S.selecting ? `<div class="scanbar" style="flex-wrap:wrap">${S.confirmDelete === "selected"
@@ -719,8 +729,13 @@ function renderSupplier(id) {
     </section>
     ${p.changes_since_last_check?.length ? `<section class="panel"><h2>Changed since the last check</h2><ul class="facts">${p.changes_since_last_check.map(c => `<li>${esc(c)}</li>`).join("")}</ul></section>` : ""}
     ${s.last_checked ? `
-    <section class="panel"><h2>Products &amp; services</h2>
-      ${p.products?.length ? `<ul class="facts">${p.products.map(x => `<li><strong>${esc(x.name)}</strong>${x.details ? ": " + esc(x.details) : ""}</li>`).join("")}</ul>` : `<p class="muted">Nothing found.</p>`}
+    <section class="panel"><h2>Catalog</h2>
+      ${catalogPhotos(p).length ? `<div class="catalog">${catalogPhotos(p).map(x => `
+        <a class="product" ${safeUrl(x.page_url) ? `href="${esc(safeUrl(x.page_url))}" target="_blank" rel="noopener"` : ""}>
+          <img src="${esc(blobUrl(x.image_asset))}" alt="${esc(x.name)}" loading="lazy">
+          <strong>${esc(x.name)}</strong>${x.details ? `<span class="muted">${esc(x.details)}</span>` : ""}</a>`).join("")}</div>` : ""}
+      ${(p.products || []).filter(x => !x.image_asset).length ? `<ul class="facts">${(p.products || []).filter(x => !x.image_asset).map(x => `<li>${safeUrl(x.page_url) ? `<a href="${esc(safeUrl(x.page_url))}" target="_blank" rel="noopener"><strong>${esc(x.name)}</strong></a>` : `<strong>${esc(x.name)}</strong>`}${x.details ? ": " + esc(x.details) : ""}</li>`).join("")}</ul>` : ""}
+      ${!p.products?.length ? `<p class="muted" style="margin:0">Nothing found.</p>` : !catalogPhotos(p).length ? `<p class="muted" style="margin:0">No product photos yet; they're collected on the next research.</p>` : ""}
       <h3>Pricing</h3>
       ${p.pricing_summary ? `<p style="margin:0">${esc(p.pricing_summary)}</p>` : ""}
       ${p.pricing?.length ? `<ul class="facts">${p.pricing.map(x => `<li>${esc(x.item)}: <strong>${esc(x.price)}</strong>${x.unit ? " " + esc(x.unit) : ""}
@@ -886,7 +901,7 @@ async function dropAssets(ids) {
 async function deleteSupplier(s) {
   try { await write(s.id, () => supRef(s.id).delete()); }
   catch (e) { handleWriteError(e); return false; }
-  await dropAssets((s.docs || []).flatMap(d => [...(d.photos || []), d.pdf_asset]));
+  await dropAssets([...(s.docs || []).flatMap(d => [...(d.photos || []), d.pdf_asset]), ...catalogPhotos(s.profile).map(x => x.image_asset)]);
   return true;
 }
 function confirmRow(key, question, yes) {

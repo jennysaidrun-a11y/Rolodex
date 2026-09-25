@@ -75,3 +75,37 @@ def test_read_then_research_then_directory(tmp_path):
     directory = run("directory", ex)
     assert {d["company"] for d in directory} == {"Midwest Flour Co", "Bag Co", "Later Co"}
     assert next(d for d in directory if d["id"] == "abc")["tags"] == ["SQF"]
+
+
+def test_catalog_photos(tmp_path):
+    import http.server
+    import threading
+    import io
+    from PIL import Image
+    site = tmp_path / "site"; site.mkdir()
+    buf = io.BytesIO(); Image.new("RGB", (400, 300), "tan").save(buf, "JPEG"); (site / "bag.jpg").write_bytes(buf.getvalue() * 2)
+    (site / "logo.svg").write_text("<svg/>")
+    handler = lambda *a, **k: http.server.SimpleHTTPRequestHandler(*a, directory=str(site), **k)
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        (tmp_path / "ex").mkdir()
+        ex = export(tmp_path / "ex", {"s1": {"company": "Bag Co", "status": "queued", "next_check": "2000-01-01", "docs": [],
+                                            "profile": {"products": [{"name": "Old", "image_asset": "f" * 32}]},
+                                            "last_checked": "2026-01-01T00:00:00"}})
+        result = tmp_path / "r.json"
+        result.write_text(json.dumps(dict(RESEARCH, products=[
+            {"name": "Bread bag", "details": "1.5 mil", "image_url": base + "/bag.jpg", "page_url": base + "/bag"},
+            {"name": "Logo", "details": "", "image_url": base + "/logo.svg", "page_url": ""},
+            {"name": "Twist ties", "details": "", "image_url": "", "page_url": ""}])))
+        got = run("fetch-images", result, tmp_path / "img")
+        assert [x["product"] for x in got["saved"]] == [0] and got["skipped"][0]["product"] == 1
+        assert (tmp_path / "img" / "p0.jpg").exists()
+        mapping = tmp_path / "map.json"; mapping.write_text(json.dumps({"0": "a" * 32}))
+        out = run("apply-research", ex, "s1", result, tmp_path / "u.json", "--images", mapping)
+        products = json.loads((tmp_path / "u.json").read_text())["profile"]["products"]
+        assert [p["image_asset"] for p in products] == ["a" * 32, "", ""]
+        assert out["old_product_photos_to_delete"] == ["f" * 32]   # the replaced photo, for deletion
+    finally:
+        srv.shutdown()

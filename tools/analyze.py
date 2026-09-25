@@ -10,7 +10,8 @@ No API key, no packages beyond the Python standard library.
     python tools/analyze.py show-read EXPORT_DIR SUPPLIER_ID DOC_ID
     python tools/analyze.py apply-read EXPORT_DIR SUPPLIER_ID DOC_ID READING.json OUT.json
     python tools/analyze.py show-research EXPORT_DIR SUPPLIER_ID
-    python tools/analyze.py apply-research EXPORT_DIR SUPPLIER_ID RESULT.json OUT.json [--pdf DOC_ID=ASSET_ID ...]
+    python tools/analyze.py fetch-images RESULT.json IMAGE_DIR
+    python tools/analyze.py apply-research EXPORT_DIR SUPPLIER_ID RESULT.json OUT.json [--images MAP.json] [--pdf DOC_ID=ASSET_ID ...]
     python tools/analyze.py fail EXPORT_DIR SUPPLIER_ID OUT.json MESSAGE
     python tools/analyze.py directory EXPORT_DIR
 
@@ -94,9 +95,9 @@ def _out(obj) -> None:
     print(json.dumps(obj, indent=2, ensure_ascii=False))
 
 
-def _write_update(path: str, patch: dict, version: int | None) -> None:
+def _write_update(path: str, patch: dict, version: int | None, extra: dict | None = None) -> None:
     Path(path).write_text(json.dumps(patch, indent=2, ensure_ascii=False), encoding="utf-8")
-    _out({"update_file": path,
+    _out({**(extra or {}), "update_file": path,
           "next": "ArtifactData update suppliers/<id> with this file_path, and if_version = the version "
                   "the export (or your last update of it) reported" + (f" ({version})" if version else "")})
 
@@ -173,7 +174,44 @@ def cmd_show_research(ex: Export, sid: str) -> None:
           "output_schema": claude.research_schema(ex.categories)})
 
 
-def cmd_apply_research(ex: Export, sid: str, result_file: str, out: str, pdfs: dict[str, str]) -> None:
+IMAGE_TYPES = {b"\xff\xd8\xff": "jpg", b"\x89PNG": "png", b"GIF8": "gif", b"RIFF": "webp"}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def cmd_fetch_images(result_file: str, out_dir: str) -> None:
+    """Download each product's photo (image_url) so it can be uploaded to the page."""
+    import urllib.request
+    result = json.loads(Path(result_file).read_text(encoding="utf-8"))
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    saved, skipped = [], []
+    for i, p in enumerate(result.get("products", [])):
+        url = (p.get("image_url") or "").strip()
+        if not url.lower().startswith(("http://", "https://")):
+            continue
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (supplier rolodex)"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = r.read(MAX_IMAGE_BYTES + 1)
+        except Exception as e:
+            skipped.append({"product": i, "reason": f"download failed ({type(e).__name__})"})
+            continue
+        ext = next((x for magic, x in IMAGE_TYPES.items() if data.startswith(magic)), None)
+        if ext == "webp" and data[8:12] != b"WEBP":
+            ext = None
+        if not ext or len(data) > MAX_IMAGE_BYTES or len(data) < 2000:
+            skipped.append({"product": i, "reason": "not a usable photo"})
+            continue
+        path = out / f"p{i}.{ext}"
+        path.write_bytes(data)
+        saved.append({"product": i, "file": str(path)})
+    _out({"saved": saved, "skipped": skipped,
+          "next": "Upload all saved files in one call: Artifact url=PAGE asset=true file_paths=[...]; then write "
+                  "{\"<product index>\": \"<asset id>\"} to a JSON file and pass it as --images to apply-research"})
+
+
+def cmd_apply_research(ex: Export, sid: str, result_file: str, out: str, pdfs: dict[str, str],
+                       images: dict[str, str] | None = None) -> None:
     s = ex.supplier(sid)
     result = json.loads(Path(result_file).read_text(encoding="utf-8"))
     errors = validate(result, claude.research_schema(ex.categories))
@@ -181,6 +219,10 @@ def cmd_apply_research(ex: Export, sid: str, result_file: str, out: str, pdfs: d
         sys.exit(json.dumps({"saved": False, "errors": errors}, indent=2))
     checked = datetime.now()
     attention = bool(result.get("needs_attention"))
+    images = images or {}
+    old_assets = {p.get("image_asset") for p in (s["profile"] or {}).get("products", []) if p.get("image_asset")}
+    result["products"] = [dict(p, image_asset=images.get(str(i), "")) for i, p in enumerate(result.get("products", []))]
+    kept = {p["image_asset"] for p in result["products"] if p["image_asset"]}
     patch = {
         "progress": None,   # clears the step marker the page's progress bar reads
         "profile": result,
@@ -202,7 +244,11 @@ def cmd_apply_research(ex: Export, sid: str, result_file: str, out: str, pdfs: d
                           pdf_asset=pdfs.get(d["id"], d.get("pdf_asset", "")))
                      if d.get("kind") == "pamphlet" else d for d in s["docs"]]
     ex.store(sid, patch)
-    _write_update(out, patch, ex.versions.get(sid))
+    orphans = sorted(old_assets - kept)
+    _write_update(out, patch, ex.versions.get(sid), {
+        "old_product_photos_to_delete": orphans,
+        "then": "after the update is written, delete each old photo: Artifact action=delete url=PAGE path=<id>"}
+        if orphans else None)
 
 
 def cmd_fail(ex: Export, sid: str, out: str, message: str) -> None:
@@ -224,7 +270,11 @@ def cmd_directory(ex: Export) -> None:
 
 
 def main(argv: list[str]) -> None:
-    pdfs = {}
+    pdfs, images = {}, {}
+    if "--images" in argv:
+        i = argv.index("--images")
+        images = {str(k): v for k, v in json.loads(Path(argv[i + 1]).read_text(encoding="utf-8")).items()}
+        argv = argv[:i] + argv[i + 2:]
     if "--pdf" in argv:
         i = argv.index("--pdf")
         for item in argv[i + 1:]:
@@ -241,7 +291,9 @@ def main(argv: list[str]) -> None:
         case ["show-research", root, sid]:
             cmd_show_research(Export(root), sid)
         case ["apply-research", root, sid, result, out]:
-            cmd_apply_research(Export(root), sid, result, out, pdfs)
+            cmd_apply_research(Export(root), sid, result, out, pdfs, images)
+        case ["fetch-images", result, out_dir]:
+            cmd_fetch_images(result, out_dir)
         case ["fail", root, sid, out, *message]:
             cmd_fail(Export(root), sid, out, " ".join(message) or "Couldn't research this supplier.")
         case ["directory", root]:

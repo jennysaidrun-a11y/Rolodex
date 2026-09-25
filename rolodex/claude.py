@@ -106,7 +106,8 @@ def research_schema(categories: list[dict]) -> dict:
         "business_status": {"type": "string", "enum": ["active", "closed", "acquired", "unknown"]},
         "summary": STR,
         "categories": _categories_field(categories),
-        "products": {"type": "array", "items": _schema({"name": STR, "details": STR})},
+        "products": {"type": "array", "items": _schema({
+            "name": STR, "details": STR, "image_url": STR, "page_url": STR})},
         "pricing": {"type": "array", "items": _schema({
             "item": STR, "price": STR, "unit": STR,
             "kind": {"type": "string", "enum": PRICE_KINDS},
@@ -237,7 +238,11 @@ def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | N
         + (f"Profile from the last check ({supplier.get('last_checked')}):\n{json.dumps(previous, indent=2)}\n\n"
            if previous else "This is the first check.\n\n")
         + "Use web search to find and verify, with a source URL for each fact:\n"
-        "- what they sell that a bakery would buy (products, brands, services) and the categories that fit\n"
+        "- what they sell that a bakery would buy (products, brands, services) and the categories that fit. "
+        "products: 6-15 of their products or product lines a bakery would care about, from their own website "
+        "(catalog, shop or product pages; a distributor's page for their brand if they have no site), each "
+        "with page_url (the product page) and image_url (the direct URL of that product's own photo: "
+        "a .jpg/.png/.webp file, not a logo, banner, icon or placeholder; empty if there isn't one)\n"
         "- pricing, following the pricing rules below\n"
         "- stock, lead times and minimum order, if published\n"
         "- locations (HQ, plants, warehouses) and the area they serve\n"

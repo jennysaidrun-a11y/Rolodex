@@ -78,8 +78,11 @@ ArtifactData update url=PAGE collection=suppliers doc_id=<supplier_id> if_versio
 Each write returns the supplier's new `version`; use it for the next write (including the final
 update). The steps:
 
-1. **Company & products**: confirm it's the same business as the card; what they sell to a
-   bakery, categories, locations, service area, stock/lead times, minimum order.
+1. **Company & catalog**: confirm it's the same business as the card; what they sell to a
+   bakery, categories, locations, service area, stock/lead times, minimum order. Go through their
+   catalog/shop/product pages and list 6-15 products with each product's page URL and the direct
+   URL of its photo (open the product page with WebFetch and take the product image's src; not
+   logos, banners or placeholders). Staff use these photos to see what the supplier makes.
 2. **Pricing** (required): follow the pricing rules in `instructions` and come back with real price
    points: the supplier's own if published, otherwise distributor listings for the same or
    equivalent products, public contract prices, or market benchmarks, each labeled with its kind,
@@ -87,7 +90,11 @@ update). The steps:
 3. **Certifications & regulatory**: food-safety certifications with status; recalls, warning
    letters, enforcement actions.
 4. **Reviews & news**.
-5. **PDFs & saving**: for pamphlets (listed in the instructions by card_id), find each one's PDF
+5. **Photos, PDFs & saving**: download the product photos
+   (`python tools/analyze.py fetch-images work/research-<supplier_id>.json work/img-<supplier_id>`),
+   upload every saved file in one call (`Artifact url=PAGE asset=true file_paths=[...]`), and write
+   `work/img-<supplier_id>.json` mapping each product index to its asset id (`{"0": "<id>", ...}`).
+   For pamphlets (listed in the instructions by card_id), find each one's PDF
    online (literature/downloads pages first), use it, and save a copy for the page:
    `curl -sSL -o work/<card_id>.pdf "<pdf url>"`, check it starts with `%PDF`, then
    `Artifact url=PAGE asset=true file_path=work/<card_id>.pdf` and note the asset id. Then write
@@ -102,11 +109,13 @@ existing tags.
 Write the JSON to `work/research-<supplier_id>.json`, then:
 
 ```
-python tools/analyze.py apply-research work/export <supplier_id> work/research-<supplier_id>.json work/update.json [--pdf <card_id>=<asset id> ...]
+python tools/analyze.py apply-research work/export <supplier_id> work/research-<supplier_id>.json work/update.json [--images work/img-<supplier_id>.json] [--pdf <card_id>=<asset id> ...]
 ArtifactData update url=PAGE collection=suppliers doc_id=<supplier_id> file_path=work/update.json if_version=<latest version>
 ```
 
-(The update clears the progress marker.) If a company can't be found, record it instead (tried
+(The update clears the progress marker.) If apply-research lists `old_product_photos_to_delete`
+(photos from an earlier research that were replaced), delete each one after writing the update:
+`Artifact action=delete url=PAGE path=<id>`. If a company can't be found, record it instead (tried
 again next run): `python tools/analyze.py fail work/export <supplier_id> work/update.json "why"`,
 add `"progress": null` to that file, and write it.
 

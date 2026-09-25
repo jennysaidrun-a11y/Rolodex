@@ -26,6 +26,10 @@ signed in to Claude. (Source: `artifact/index.html`.)
   same routine also runs every night at 23:07 UTC, so nothing waits if nobody taps the button.
   The button works for the page owner's account; for everyone else the nightly run covers it.
   (You can also type **`/analyze`** in a claude.ai/code session on this repo.)
+- **Catalog**: research collects 6-15 product photos from each supplier's own site (catalog, shop
+  or product pages) with names, details and links, saved into the rolodex. Each supplier's page
+  shows them as a grid, and the list shows a few thumbnails, so you can see what they make.
+  Suppliers researched before this was added get photos on their next research (**Research again**).
 - **Research again**: on a supplier's page, or **Select** several in the list and **Research
   selected**; they're done on the next analysis.
 - **Categories** (top menu) and **tags** filter the list: categories match any you pick, tags must
