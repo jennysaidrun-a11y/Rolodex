@@ -33,6 +33,9 @@ Claude Code uses it instead.)
   minutes and right after each analysis (the note at the bottom of every page says when; **Save to
   GitHub now** does it immediately). A new or rebuilt Codespace starts from that copy, so a stopped
   or deleted Codespace loses nothing.
+- **It updates itself.** Every minute the Codespace checks GitHub for a newer version of the app;
+  when there is one it gets it and restarts the app (after any analysis in progress finishes). You
+  never need to pull, push or rebuild anything.
 - **Catalog photos** aren't stored in the repository: the app shows them from the supplier's site
   and keeps a copy in `data/cache/`, fetching any it doesn't have again.
 - **It sleeps when idle.** A Codespace stops after 30 minutes with nobody typing in it (the app with
@@ -45,7 +48,8 @@ Claude Code uses it instead.)
   `APP_PASSWORD` (a Codespaces secret) so the page asks for a password.
 
 The Codespace setup is in `.devcontainer/` (Python 3.12, Node and Claude Code; `start.sh` pulls the
-latest code and data and keeps the app running on port 8000; the log is `/tmp/rolodex.log`).
+latest code and data, keeps the app running on port 8000 and restarts it on each new version
+of the code on `main`; the log is `/tmp/rolodex.log`).
 
 The same app also runs on any computer with Python (`run.bat` on Windows, `run.sh` on Linux); see
 **Running it on your own computer** below.
