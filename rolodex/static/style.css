@@ -144,7 +144,7 @@ pre.log { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; back
           border-radius: 8px; max-height: 70vh; overflow: auto; }
 
 /* ---- analysis progress ---- */
-.runbar { background: #2d241f; color: #fff; }
+.runbar { background: #43270b; color: #fff; }
 .runbar-inner { max-width: 860px; margin: 0 auto; padding: 10px 16px; display: grid; grid-template-columns: 1fr auto;
                 gap: 6px 12px; align-items: center; }
 .runbar-text { grid-column: 1; font-size: .9rem; overflow-wrap: anywhere; }

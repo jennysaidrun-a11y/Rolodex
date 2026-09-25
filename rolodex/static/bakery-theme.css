@@ -1,0 +1,131 @@
+/* Bakery theme, shared by the bakery's apps (File Filler, Resumes, Supplier Rolodex).
+   Tokens copied from the project's bakery-theme/theme.md (United Bakery branding, 2026-09-25): change them
+   there and in every app together. Loaded after style.css; only colour, type, surfaces and chrome. */
+:root{
+  --crust:#43270b;      /* United Bakery brown (their site): title bar, primary buttons, headings */
+  --crust-2:#5e3a17;    /* hover on crust */
+  --oven:#c8911f;       /* logo gold (the oval): badge, focus ring, active tab line */
+  --wheat:#ecd29a;      /* pale wheat from the logo: on-dark text/marks, highlights */
+  --flour:#faf6ef;      /* page background */
+  --dough:#fffdf8;      /* cards, panes */
+  --proof:#f3ebdf;      /* subtle fills: table heads, hover rows, side bar */
+  --line:#e7dccd;       /* borders */
+  --ink:#2a1d14;        /* body text */
+  --muted:#7a6a5a;      /* secondary text */
+  --ok:#2f7d4a;         /* basil: done */
+  --warn:#d9822b;       /* needs a look */
+  --bad:#b83a2e;        /* missing, errors */
+  --uniq:#6e4bb8;
+  --radius:12px;
+  --shadow:0 1px 2px rgba(67,39,11,.06),0 4px 14px rgba(67,39,11,.07);
+  --shadow-hover:0 2px 4px rgba(74,44,23,.08),0 10px 24px rgba(74,44,23,.10);
+  --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-head:"Fraunces",Georgia,"Times New Roman",serif;
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  /* the rolodex's own names, mapped onto the theme */
+  --bg:var(--flour); --card:var(--dough); --brand:var(--crust); --accent:var(--crust);
+  --link:#7a4a12; --warn-bg:#fbecd6; --warn-text:#8a4b0f; --err-bg:#fbe6e2; --err:var(--bad);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --flour:#17110d; --dough:#221913; --proof:#2c2119; --line:#3a2c22; --ink:#f3eadf; --muted:#bba997;
+         --crust:#43270b; --accent:#c8911f; --link:#e0a060; --warn-bg:#3a2915; --warn-text:#f0b870;
+         --err-bg:#3b1d19; --err:#f3a497; --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-hover:0 4px 16px rgba(0,0,0,.4); }
+}
+
+body{ font-family:var(--font); font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased; background:var(--bg); color:var(--ink); }
+h1,h2,.brand-name{ font-family:var(--font-head); font-weight:600; letter-spacing:-.01em; }
+h1{ font-size:1.75rem; line-height:1.15; }
+h2{ font-size:1.2rem; }
+h3{ font-size:.78rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-top:18px; }
+a{ color:var(--link); text-underline-offset:2px; }
+a:hover{ color:var(--oven); }
+::selection{ background:var(--proof); }
+:focus-visible{ outline:2px solid var(--oven); outline-offset:2px; }
+.psku,.tab .n,.n{ font-family:var(--font); font-variant-numeric:tabular-nums; }
+
+/* Title bar: crust, wheat mark + "Bakehouse" + app name, oven-to-wheat line underneath */
+.top{ min-height:48px; padding:8px 20px; background:var(--crust); border-bottom:0;
+      box-shadow:0 3px 0 0 transparent; position:sticky; }
+.top::after{ content:""; position:absolute; left:0; right:0; bottom:-3px; height:3px;
+             background:linear-gradient(90deg,var(--oven),var(--wheat)); }
+.brand{ display:flex; align-items:center; gap:10px; color:var(--wheat) !important; }
+.badge{ width:34px; height:26px; border-radius:50%; background:var(--oven); box-shadow:0 0 0 2px #1f1206,0 0 0 3px var(--oven);
+        display:grid; place-items:center; color:var(--crust); flex:none; margin-left:3px; }
+.brand-mark{ width:18px; height:18px; }
+.brand-text{ display:flex; align-items:center; gap:10px; line-height:1; }
+.wordmark{ font:700 16px/1 var(--font-head); letter-spacing:.06em; text-transform:uppercase; color:var(--wheat); white-space:nowrap; }
+.wordmark i{ font:italic 600 16px/1 var(--font-head); letter-spacing:0; text-transform:none; color:#f3e6cc; margin-left:5px; }
+.brand-name{ font-family:var(--font); font-weight:600; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase;
+             color:#f3e6cc; padding-left:10px; border-left:1px solid rgba(236,210,154,.4); }
+.top nav{ gap:4px; }
+.top nav a:not(.btn){ color:#f3e3c2; padding:6px 10px; border-radius:8px; font-size:.95rem; }
+.top nav a:not(.btn):hover{ background:rgba(255,255,255,.08); color:#fff; }
+.top nav a.on:not(.btn){ color:#fff; box-shadow:inset 0 -2px 0 var(--oven); border-radius:0; }
+.top .btn{ background:var(--wheat); color:var(--crust); box-shadow:none; }
+.top .btn:hover{ background:#f0d494; color:var(--crust); }
+
+/* Page intro: eyebrow, serif title, one muted line */
+.page-intro{ margin:10px 0 16px; }
+.eyebrow{ display:block; font-size:.72rem; letter-spacing:.16em; text-transform:uppercase; color:var(--oven); font-weight:700; margin-bottom:4px; }
+.page-intro h1{ margin:0 0 4px; font-size:2rem; }
+.page-intro p{ margin:0; color:var(--muted); }
+
+/* Surfaces */
+.card,.nav-box{ border-radius:var(--radius); border-color:var(--line); box-shadow:var(--shadow); background:var(--card); }
+.card > h2:first-child{ margin-bottom:12px; }
+.list a,.product,.cat-tile{ border-radius:var(--radius); box-shadow:var(--shadow); transition:box-shadow .15s,border-color .15s,transform .15s; }
+.list a:hover,.product:hover,.cat-tile:hover{ border-color:var(--oven); box-shadow:var(--shadow-hover); transform:translateY(-1px); }
+.list a strong{ font-family:var(--font-head); font-weight:600; font-size:1.08rem; }
+.cat-tile,.tree a:hover,.mini,pre.log{ background:var(--proof); }
+.store-nav .nav-box{ background:var(--proof); }
+
+/* Buttons and fields */
+.btn{ background:var(--crust); border-radius:8px; box-shadow:0 1px 2px rgba(74,44,23,.2); transition:background .15s,box-shadow .15s; }
+.btn:hover{ background:var(--crust-2); color:#fff; }
+.btn.ghost{ background:transparent; color:var(--crust); border:1px solid var(--crust); box-shadow:none; }
+.btn.ghost:hover{ background:var(--proof); color:var(--crust); }
+.btn.ghost.light{ color:#fff; border-color:#fff; }
+.btn.danger,.btn.danger-inline{ box-shadow:none; }
+.btn.danger:hover,.btn.danger-inline:hover{ background:var(--err-bg); color:var(--err); }
+.linkish{ color:var(--link); }
+input,select,textarea{ background:var(--dough); border-radius:8px; border-color:var(--line); transition:border-color .15s,box-shadow .15s; }
+input:focus,select:focus,textarea:focus{ outline:none; border-color:var(--oven); box-shadow:0 0 0 3px rgba(200,145,31,.25); }
+
+/* Pills: chips, tags, tabs, catalog tree */
+.tag{ background:var(--proof); color:var(--ink); }
+.tag.warn,.notice{ background:var(--warn-bg); color:var(--warn-text); }
+.chip{ background:var(--dough); }
+.chip.toggle:has(input:checked),.chip.on,.tab.on,.tree li.on > a{ background:var(--crust); border-color:var(--crust); color:#fff; }
+.tab{ background:var(--dough); }
+.tab:hover,.chip:hover{ border-color:var(--oven); }
+.tab.on{ box-shadow:inset 0 -2px 0 var(--oven); }
+.tab.on .n,.tree li.on > a .n,.chip.on .n{ color:var(--wheat); opacity:1; }
+.kind-switch label:has(input:checked){ border-color:var(--crust); background:var(--proof); color:var(--crust); }
+@media (prefers-color-scheme: dark){
+  .chip.toggle:has(input:checked),.chip.on,.tab.on,.tree li.on > a{ background:var(--oven); border-color:var(--oven); color:#1b120c; }
+  .tab.on .n,.tree li.on > a .n,.chip.on .n{ color:#1b120c; }
+  .btn{ background:var(--oven); color:#1b120c; } .btn:hover{ background:#d9a236; color:#1b120c; }
+  .btn.ghost,.btn.ghost:hover{ color:var(--oven); border-color:var(--oven); background:transparent; }
+  .kind-switch label:has(input:checked){ color:var(--oven); border-color:var(--oven); }
+}
+
+/* Messages: colour for meaning */
+.notice,.error,.alert{ border-radius:8px; border-left:4px solid currentColor; }
+.error,.alert{ background:var(--err-bg); color:var(--err); }
+.answer{ font-size:1.02rem; }
+
+/* Prices and progress */
+.pprice,.big-price{ color:var(--crust); font-family:var(--font-head); }
+@media (prefers-color-scheme: dark){ .pprice,.big-price{ color:var(--wheat); } }
+.runbar{ background:var(--crust); }
+.runbar .bar span{ background:linear-gradient(90deg,var(--oven),var(--wheat)); }
+
+/* Footer */
+.foot{ border-top:1px solid var(--line); padding-top:14px; margin-top:24px; }
+
+@media (max-width:440px){
+  .top{ padding:8px 12px; }
+  .brand-name{ display:none; }
+  .page-intro h1{ font-size:1.6rem; }
+}
