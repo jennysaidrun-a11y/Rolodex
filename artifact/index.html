@@ -346,6 +346,39 @@ function applyReading(s, docId, reading) {
   return patch;
 }
 
+/* ---------- back navigation ----------
+   Every move (a new page, or a change of filters on the search page) remembers where you were,
+   so "Back" always returns to exactly the previous screen, filters included. */
+const trail = [];
+let skipPush = false, lastState = null;
+const hashNow = () => location.hash || "#home";
+const snapFilters = () => ({ q: S.filters.q, cats: [...S.filters.cats], tags: [...S.filters.tags], attention: S.filters.attention });
+const stateNow = () => ({ hash: hashNow(), filters: snapFilters() });
+function restoreFilters(x) { S.filters = { q: x.q, cats: new Set(x.cats), tags: new Set(x.tags), attention: x.attention }; }
+function remember() { trail.push(stateNow()); if (trail.length > 100) trail.shift(); }
+function navigate(hash, push = true) {
+  if (push) remember();
+  skipPush = true;
+  if (hashNow() === "#" + hash) { skipPush = false; render(); } else location.hash = hash;
+}
+function finishTo(hash) {       // after a form: return to that page if it's where we came from
+  if (trail.length && trail[trail.length - 1].hash === "#" + hash) back(); else navigate(hash, false);
+}
+function stillThere(hash) {
+  const m = hash.match(/^#(?:s|edit|add)-(.+)$/);
+  return !m || !!byId(m[1]);
+}
+function back() {
+  let e;
+  while ((e = trail.pop()) && !stillThere(e.hash)) {}
+  if (!e) e = { hash: "#home", filters: { q: "", cats: [], tags: [], attention: false } };
+  restoreFilters(e.filters);
+  S.selecting = false; S.selected.clear();
+  skipPush = true;
+  if (hashNow() === e.hash) { skipPush = false; render(); } else location.hash = e.hash.slice(1);
+}
+const canGoBack = () => trail.length > 0 || route().view !== "home";
+
 /* ---------- views ---------- */
 function route() {
   const h = location.hash.replace(/^#/, "");
@@ -371,6 +404,13 @@ function render() {
   else if (r.view === "add") renderAdd(r.id);
   else if (r.view === "categories") renderCategories();
   else renderHome();
+  if (canGoBack()) {
+    const bar = document.createElement("div");
+    bar.innerHTML = `<button class="btn small ghost" id="back" type="button">← Back</button>`;
+    app.prepend(bar);
+    bar.querySelector("#back").addEventListener("click", back);
+  }
+  lastState = stateNow();
   if (S._keepScroll) window.scrollTo(0, y);
   S._keepScroll = false;
 }
@@ -509,13 +549,13 @@ function renderHome() {
   let t;
   q.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { f.q = q.value; S._keepScroll = true; render(); const n = app.querySelector("#q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); });
   app.querySelector("#filter-form").addEventListener("submit", e => e.preventDefault());
-  app.querySelector("#attention").addEventListener("change", e => { f.attention = e.target.checked; S._keepScroll = true; render(); });
-  app.querySelectorAll("[data-cat]").forEach(el => el.addEventListener("change", () => { toggle(f.cats, el.dataset.cat); S._keepScroll = true; render(); }));
-  app.querySelectorAll("[data-tag]").forEach(el => el.addEventListener("change", () => { toggle(f.tags, el.dataset.tag); S._keepScroll = true; render(); }));
-  app.querySelectorAll("[data-drop-cat]").forEach(el => el.addEventListener("click", () => { f.cats.delete(el.dataset.dropCat); render(); }));
-  app.querySelectorAll("[data-drop-tag]").forEach(el => el.addEventListener("click", () => { f.tags.delete(el.dataset.dropTag); render(); }));
-  app.querySelector("#clear-filters")?.addEventListener("click", () => { f.cats.clear(); f.tags.clear(); f.q = ""; f.attention = false; render(); });
-  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", e => { e.preventDefault(); f.cats = new Set([el.dataset.browse]); render(); }));
+  app.querySelector("#attention").addEventListener("change", e => { remember(); f.attention = e.target.checked; S._keepScroll = true; render(); });
+  app.querySelectorAll("[data-cat]").forEach(el => el.addEventListener("change", () => { remember(); toggle(f.cats, el.dataset.cat); S._keepScroll = true; render(); }));
+  app.querySelectorAll("[data-tag]").forEach(el => el.addEventListener("change", () => { remember(); toggle(f.tags, el.dataset.tag); S._keepScroll = true; render(); }));
+  app.querySelectorAll("[data-drop-cat]").forEach(el => el.addEventListener("click", () => { remember(); f.cats.delete(el.dataset.dropCat); render(); }));
+  app.querySelectorAll("[data-drop-tag]").forEach(el => el.addEventListener("click", () => { remember(); f.tags.delete(el.dataset.dropTag); render(); }));
+  app.querySelector("#clear-filters")?.addEventListener("click", () => { remember(); f.cats.clear(); f.tags.clear(); f.q = ""; f.attention = false; render(); });
+  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", e => { e.preventDefault(); remember(); f.cats = new Set([el.dataset.browse]); render(); }));
   app.querySelector("#select-toggle")?.addEventListener("click", () => { S.selecting = !S.selecting; S.selected.clear(); S._keepScroll = true; render(); });
   app.querySelectorAll("[data-pick]").forEach(el => el.addEventListener("change", () => { toggle(S.selected, el.dataset.pick); S._keepScroll = true; render(); }));
   const all = app.querySelector("#select-all");
@@ -584,7 +624,6 @@ function renderSupplier(id) {
   const canResearch = S.canWrite !== false && !unread.length && s.status !== "researching";
   app.innerHTML = `
     ${flashHtml()}
-    <p><a href="#home">← All suppliers</a></p>
     ${waitingBanner()}
     <section class="panel">
       <div class="between"><div><h1>${esc(s.company)}</h1>
@@ -658,8 +697,12 @@ function renderSupplier(id) {
     try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; }
     catch { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent = "Selected"; }
   }));
-  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", () => { S.filters.cats = new Set([el.dataset.browse]); S.filters.tags.clear(); S.filters.q = ""; }));
-  app.querySelectorAll("[data-tagfilter]").forEach(el => el.addEventListener("click", () => { S.filters = { q: "", cats: new Set(), tags: new Set([el.dataset.tagfilter]), attention: false }; location.hash = "home"; }));
+  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", e => {
+    e.preventDefault(); remember();
+    S.filters = { q: "", cats: new Set([el.dataset.browse]), tags: new Set(), attention: false };
+    navigate("home", false);
+  }));
+  app.querySelectorAll("[data-tagfilter]").forEach(el => el.addEventListener("click", () => { remember(); S.filters = { q: "", cats: new Set(), tags: new Set([el.dataset.tagfilter]), attention: false }; navigate("home", false); }));
   app.querySelector("#analyze-now")?.addEventListener("click", analyzeNow);
   app.querySelector("#reviewed")?.addEventListener("click", () => updateSupplier(s.id, { needs_attention: false }));
   app.querySelector("#research-now")?.addEventListener("click", async () => {
@@ -681,7 +724,6 @@ function renderEdit(id) {
   const field = (key, label, type = "text", wide = false) => `<label class="field ${wide ? "wide" : ""}">${label}<input type="${type}" id="f-${key}" value="${esc(s[key] || "")}"></label>`;
   app.innerHTML = `
     ${flashHtml()}${writeGate()}
-    <p><a href="#s-${esc(s.id)}">← Back to ${esc(s.company)}</a></p>
     <section class="panel">
       <h1>Edit ${esc(s.company)}</h1>
       <form id="edit-form" class="grid2">
@@ -727,7 +769,7 @@ function renderEdit(id) {
       phone: val("phone"), email: val("email"), website: val("website"), address: val("address"),
       categories: cats, staff_tags: [...staff, ...added], removed_tags: [...removed],
     });
-    if (ok) { flash("ok", "Saved."); location.hash = "s-" + s.id; }
+    if (ok) { flash("ok", "Saved."); finishTo("s-" + s.id); }
   });
   app.querySelector("#del")?.addEventListener("click", () => { S.confirmDelete = true; render(); });
   app.querySelector("#del-no")?.addEventListener("click", () => { S.confirmDelete = false; render(); });
@@ -736,7 +778,7 @@ function renderEdit(id) {
     try {
       await write(s.id, () => supRef(s.id).delete());
       if (S.assets) for (const d of s.docs || []) for (const a of [...(d.photos || []), d.pdf_asset].filter(Boolean)) { try { await S.assets.delete(a); } catch {} }
-      flash("ok", `${s.company} deleted.`); location.hash = "home";
+      flash("ok", `${s.company} deleted.`); navigate("home", false);
     } catch (e) { handleWriteError(e); }
   });
 }
@@ -818,7 +860,7 @@ async function addPhotos(kind, files, existing) {
       await write(id, () => supRef(id).update(applyReading(fresh, doc.id, reading)));
       flash("ok", existing ? "Added and read. Add more, or tap \"Done adding: analyze now\" to research." : "Card read. Check the details and Save. When you've added everything, tap \"Done adding: analyze now\".");
       S.busy = false;
-      location.hash = existing ? "s-" + id : "edit-" + id;
+      if (existing) finishTo("s-" + id); else navigate("edit-" + id, false);
       render(); return;
     } catch (e) {
       if (e?.code !== "not_granted" && e?.code !== "cancelled") console.warn("card read failed", e);
@@ -828,8 +870,7 @@ async function addPhotos(kind, files, existing) {
     flash("ok", "Saved. Add more, or tap \"Done adding: analyze now\" when you're finished.");
   }
   S.busy = false;
-  location.hash = "s-" + id;
-  render();
+  if (existing) finishTo("s-" + id); else navigate("s-" + id, false);
 }
 
 /* ---------- categories ---------- */
@@ -874,7 +915,11 @@ function renderCategories() {
     await addCategory(app.querySelector("#cat-name").value, app.querySelector("#cat-desc").value);
     flash("ok", "Category added."); render();
   });
-  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", () => { S.filters.cats = new Set([el.dataset.browse]); }));
+  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", e => {
+    e.preventDefault(); remember();
+    S.filters = { q: "", cats: new Set([el.dataset.browse]), tags: new Set(), attention: false };
+    navigate("home", false);
+  }));
   app.querySelectorAll("form.cat-row[data-i]").forEach(form => {
     const i = +form.dataset.i, c = list[i];
     form.addEventListener("submit", async e => {
@@ -903,7 +948,11 @@ function renderCategories() {
 }
 
 /* ---------- start ---------- */
-window.addEventListener("hashchange", () => { S.confirmDelete = false; window.scrollTo(0, 0); render(); });
+window.addEventListener("hashchange", () => {
+  if (!skipPush && lastState && lastState.hash !== hashNow()) { trail.push(lastState); if (trail.length > 100) trail.shift(); }
+  skipPush = false;
+  S.confirmDelete = false; window.scrollTo(0, 0); render();
+});
 
 (async () => {
   const claude = window.claude;
