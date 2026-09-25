@@ -354,8 +354,9 @@ def test_claude_code_mode_cards_pamphlets_and_research(client, monkeypatch, caps
     pamphlet = db.get_card(pamphlet_id)
     assert pamphlet["pdf_url"] == "https://mwf.example/flours.pdf" and pamphlet["pdf_file"] == f"pamphlet-{pamphlet_id}.pdf"
     assert client.get(f"/docs/{pamphlet['pdf_file']}").content == b"%PDF-1.7 fake"
-    page = client.get(f"/supplier/{sid}").text
-    assert "Bakery Flours 2026" in page and "Open PDF" in page and "Allergen statement" in page
+    docs = client.get(f"/supplier/{sid}?tab=documents").text
+    assert "Bakery Flours 2026" in docs and "Allergen statement" in docs
+    assert "Open PDF" in client.get(f"/supplier/{sid}?tab=photos").text
 
     ok, directory = run_tasks(capsys, "directory")
     assert directory[0]["company"] == "Midwest Flour Co"

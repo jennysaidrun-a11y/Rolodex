@@ -3,6 +3,8 @@
     python -m rolodex.catalog <supplier id> [site url] [--minutes 20]   crawl and save into the rolodex
     python -m rolodex.catalog crawl <site url> [--out FILE] [--minutes N] crawl only, print or write the JSON
     python -m rolodex.catalog photos <supplier id>                      find photos for products without one
+    python -m rolodex.catalog complete <supplier id>                    list the models on category pages, then photos
+                                                                        (runs by itself after every catalog save)
 
 Tries, cheapest first: a Shopify store's JSON, a WooCommerce store's API, then the sitemap with each
 product page's structured data (schema.org Product + BreadcrumbList, which most shop platforms
@@ -26,6 +28,8 @@ import urllib.error
 import urllib.request
 import urllib.robotparser
 from urllib.parse import urljoin, urlparse
+
+from . import pagecards
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
 DELAY = 0.5          # seconds between requests to the same site
@@ -411,14 +415,107 @@ def from_sitemap(site: Site) -> dict | None:
 SITEWIDE = re.compile(r"logo|banner|og[_-]?fb|share|placeholder|icon|sprite|favicon|default[_-]?og", re.I)
 
 
-def page_photos(url: str, page: str) -> list[str]:
-    """The product's photos on its page: structured data first, then og:image / twitter:image."""
+def page_photos(url: str, page: str, name: str = "") -> list[str]:
+    """The product's photos on its page: structured data first, then og:image / twitter:image, then
+    the pictures in the page body (those named like the product first)."""
     p = read_product_page(url, page)
     found = ([p["image_url"]] + p["images"]) if p and p["image_url"] else []
     for prop in ("og:image", "og:image:secure_url", "twitter:image"):
         if _meta(page, prop):
             found.append(urljoin(url, _meta(page, prop)))
-    return [u for u in dict.fromkeys(found) if u and not SITEWIDE.search(urlparse(u).path)]
+    found = [u for u in dict.fromkeys(found) if u and not SITEWIDE.search(urlparse(u).path)]
+    return found or pagecards.best_photo(url, page, name)
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", html.unescape(str(text)).lower())
+
+
+def expand(supplier_id: int, minutes: float = 10, depth: int = 2) -> dict:
+    """Open each catalog entry's page; when it's a category page showing several products or models
+    (a grid of cards, each with a title, photo and link), the entry becomes a section holding those
+    products. Works for any site, store or not. Products already in the catalog aren't added twice."""
+    from . import db
+    s = db.get_supplier(supplier_id)
+    sections = [dict(x) for x in db.catalog_sections(supplier_id)]
+    products = db.catalog_products(supplier_id, None, "", 100000)[0]
+    todo = [p for p in products if p["page_url"].startswith(("http://", "https://"))]
+    if not todo:
+        return {"expanded": 0, "added": 0}
+    site = Site(todo[0]["page_url"], minutes)
+    known_urls = {p["page_url"].split("#")[0].rstrip("/") for p in products}
+    known_names = {_norm(p["name"]) for p in products}
+    opened: set[str] = set()
+    expanded = added = 0
+    out = list(products)
+    for level in range(depth):
+        new_out, grew = [], False
+        for p in out:
+            url = p["page_url"].split("#")[0]
+            if site.out_of_time() or not url.startswith(("http://", "https://")) or url in opened \
+                    or (level and not p.get("_new")):
+                new_out.append(p)
+                continue
+            opened.add(url)
+            try:
+                page = site.get(url, limit=3_000_000).decode("utf-8", "replace")
+            except Exception:
+                new_out.append(p)
+                continue
+            if read_product_page(url, page):   # a real product page, not a category
+                new_out.append(p)
+                continue
+            cards = [c for c in pagecards.product_cards(url, page)
+                     if c["page_url"].split("#")[0].rstrip("/") not in known_urls and _norm(c["name"]) not in known_names]
+            if len(cards) < 2:
+                new_out.append(p)
+                continue
+            sid = f"x-{slug(p['name'])}"[:80]
+            while any(x["id"] == sid for x in sections):
+                sid += "-"
+            sections.append({"id": sid, "name": p["name"], "parent_id": p["section_id"]})
+            expanded += 1
+            grew = True
+            for c in cards:
+                known_urls.add(c["page_url"].split("#")[0].rstrip("/"))
+                known_names.add(_norm(c["name"]))
+                new_out.append({"id": f"{sid}/{slug(c['name'])}", "section_id": sid, "name": c["name"], "sku": "",
+                                "details": c["details"][:300], "description": c["details"], "price": "",
+                                "page_url": c["page_url"], "image_url": c["image_url"], "images": c["images"], "_new": True})
+                added += 1
+        out = new_out
+        if not grew:
+            break
+    if expanded:
+        db.save_catalog(supplier_id, {"source": s["catalog"].get("source", ""), "note": s["catalog"].get("note", ""),
+                                      "platform": s["catalog"].get("method", ""), "sections": sections,
+                                      "products": [{k: v for k, v in x.items() if k != "_new"} for x in out]})
+    return {"expanded": expanded, "added": added, "pages_opened": len(opened)}
+
+
+COMPLETE_VERSION = 1   # raise when complete() learns something new, so existing catalogs get it once
+
+
+def complete(supplier_id: int, minutes: float = 15) -> dict:
+    """After any catalog copy: open category pages for the models on them, then find missing photos."""
+    from . import db
+    res = {"models": expand(supplier_id, minutes * 2 / 3), "photos": fill_photos(supplier_id, minutes / 3)}
+    s = db.get_supplier(supplier_id)
+    db.update_supplier(supplier_id, catalog={**s["catalog"], "completed": COMPLETE_VERSION})
+    return res
+
+
+def complete_outdated() -> None:
+    """Bring catalogs copied before the current complete() up to date (the app runs this once at start)."""
+    from . import db
+    import logging
+    for s in db.all_suppliers():
+        cat = s.get("catalog") or {}
+        if cat.get("total") and cat.get("completed", 0) < COMPLETE_VERSION:
+            try:
+                logging.getLogger("rolodex.catalog").info("Completing %s's catalog: %s", s["company"], complete(s["id"]))
+            except Exception as e:
+                logging.getLogger("rolodex.catalog").warning("Couldn't complete %s's catalog: %s", s["company"], e)
 
 
 def fill_photos(supplier_id: int, minutes: float = 15) -> dict:
@@ -431,16 +528,19 @@ def fill_photos(supplier_id: int, minutes: float = 15) -> dict:
         return {"checked": 0, "added": 0}
     site = Site(todo[0]["page_url"], minutes)
     found: dict[str, list[str]] = {}
-    pages_cache: dict[str, list[str]] = {}
+    named: dict[str, list[str]] = {}
+    pages_cache: dict[str, str] = {}
     for p in todo:
         if site.out_of_time():
             break
         if p["page_url"] not in pages_cache:
             try:
-                pages_cache[p["page_url"]] = page_photos(p["page_url"], site.get(p["page_url"], limit=3_000_000).decode("utf-8", "replace"))
+                pages_cache[p["page_url"]] = site.get(p["page_url"], limit=3_000_000).decode("utf-8", "replace")
             except Exception:
-                pages_cache[p["page_url"]] = []
-        found[p["id"]] = pages_cache[p["page_url"]]
+                pages_cache[p["page_url"]] = ""
+        page = pages_cache[p["page_url"]]
+        found[p["id"]] = page_photos(p["page_url"], page, p["name"]) if page else []
+        named[p["id"]] = pagecards.named_photos(p["page_url"], page, p["name"]) if page else []
     # Images used by 3+ different pages are site-wide (but several products sharing ONE page share its photo).
     users: dict[str, set[str]] = {}
     for p in todo:
@@ -449,7 +549,8 @@ def fill_photos(supplier_id: int, minutes: float = 15) -> dict:
     added = 0
     with db.connect() as conn:
         for p in todo:
-            photos = [u for u in found.get(p["id"], []) if len(users[u]) < 3]
+            # A picture the page labels with this product's name is its photo even if sister products share it.
+            photos = named.get(p["id"]) or [u for u in found.get(p["id"], []) if len(users[u]) < 3]
             if photos:
                 conn.execute("UPDATE catalog_products SET image_url = ?, images = ? WHERE supplier_id = ? AND id = ?",
                              (photos[0], json.dumps(photos[1:12]), supplier_id, p["id"]))
@@ -499,6 +600,11 @@ def main(argv: list[str]) -> None:
         else:
             print(text)
         return
+    if len(argv) == 2 and argv[0] == "complete" and argv[1].isdigit():
+        from . import db
+        db.init()
+        print(json.dumps(complete(int(argv[1]), minutes)))
+        return
     if len(argv) == 2 and argv[0] == "photos" and argv[1].isdigit():
         from . import db
         db.init()
@@ -519,7 +625,9 @@ def main(argv: list[str]) -> None:
                               "next_step": "No product data found automatically. Build the catalog by hand from their "
                                            "site and save it with: python -m rolodex.tasks save catalog <id> FILE"}))
             return
-        summary = db.save_catalog(s["id"], result)
+        db.save_catalog(s["id"], result)
+        extra = complete(s["id"], min(15.0, minutes))
+        summary = db.get_supplier(s["id"])["catalog"] | extra
         db.update_supplier(s["id"], progress="")
         db.analysis_finished(s["id"])
         print(json.dumps({"saved": True, "platform": result["platform"], **summary}))

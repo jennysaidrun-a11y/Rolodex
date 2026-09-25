@@ -214,3 +214,12 @@ pre.log { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; back
 .added { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
 .added p { margin: 0; } .added form { margin: 0; }
 .many { margin-top: 14px; } .many summary { cursor: pointer; font-weight: 600; }
+
+/* Supplier page: one submenu item per kind of information */
+.tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 14px; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+.tab { flex: none; white-space: nowrap; padding: 8px 14px; border: 1px solid var(--line); border-radius: 99px;
+       background: var(--card); color: var(--ink); text-decoration: none; font-size: .95rem; }
+.tab:hover { border-color: var(--accent); }
+.tab.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.tab .n { font-size: .78em; opacity: .75; font-variant-numeric: tabular-nums; }
+@media (min-width: 760px) { .tabs { flex-wrap: wrap; overflow: visible; } }

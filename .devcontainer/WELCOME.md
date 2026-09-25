@@ -10,6 +10,8 @@ your Claude account. When it shows its prompt, type `/exit`. That's it.
 
 - Everything you add is saved to GitHub every few minutes (the note at the bottom of each page
   says when), so the Codespace can be stopped or even deleted without losing anything.
+- The app updates itself: when a new version is on GitHub it picks it up within a minute and
+  restarts. Nothing to pull, push or rebuild.
 - The Codespace stops after a while with nobody using it. Start it again from
   https://github.com/codespaces. To give long analyses time to finish, set the idle timeout
   to 240 minutes: https://github.com/settings/codespaces, under "Default idle timeout".

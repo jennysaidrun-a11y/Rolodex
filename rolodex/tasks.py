@@ -22,6 +22,7 @@ doesn't fit, so it can be fixed and saved again.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import date, timedelta
 
@@ -172,6 +173,9 @@ def cmd_save(kind: str, item_id: int, source: str) -> None:
         if errors:
             sys.exit(json.dumps({"saved": False, "errors": errors[:30]}, indent=2))
         summary = db.save_catalog(item_id, data)
+        if os.environ.get("ROLODEX_CATALOG_COMPLETE", "1") == "1":
+            from . import catalog
+            summary = db.get_supplier(item_id)["catalog"] | catalog.complete(item_id)
         db.update_supplier(item_id, progress="")
         db.analysis_finished(item_id)
         _out({"saved": True, **summary})
