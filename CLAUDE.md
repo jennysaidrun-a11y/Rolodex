@@ -39,6 +39,13 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
   site's English version (`english_root`: `<html lang>`, hreflang, `/en/`), and the skill translates
   sites that have none.
   Tests keep it offline with `ROLODEX_CATALOG_COMPLETE=0` (tests/conftest.py).
+- **Catalog review**: every catalog copy is then checked by Claude against the site, product by
+  product (`tasks show review` / `tasks save products`: adds specs, datasheets and SDS, photos;
+  `db.needs_review`, `catalog.reviewed` < `db.REVIEW_VERSION`). Reviews count as waiting work, so
+  "analyze now" and the background loop run them.
+- **Logos**: `rolodex/logos.py` finds each supplier's logo on its site (JSON-LD, header logo image,
+  app icon, favicon; English home page for splash pages) after research and once at app start;
+  shown next to the name (`logo` macro). `ROLODEX_FETCH_LOGOS=0` in tests.
 - **Data**: `data/rolodex.db` (live, not in git) is copied to `data/rolodex-backup.db` and committed
   with `data/cards/` and `data/docs/` by `rolodex/gitsync.py` (every few minutes in a Codespace).
   `db.init()` restores from the backup on a fresh checkout. Don't commit `data/rolodex.db` or `data/cache/`.

@@ -9,6 +9,8 @@
     python -m rolodex.tasks fail <supplier id> MESSAGE
     python -m rolodex.tasks save catalog <id> FILE  save a hand-made catalog (see the analyze skill)
     python -m rolodex.tasks no-catalog <id> WHY     they have no product list online
+    python -m rolodex.tasks show review <id>        each catalog product with what it's missing, to check on their site
+    python -m rolodex.tasks save products <id> FILE add what the review found to products (photos, specs, files...)
     python -m rolodex.tasks begin                   start of a run (shows the progress bar in the app)
     python -m rolodex.tasks current <supplier id>   the run is now on this supplier
     python -m rolodex.tasks progress <supplier id> <step> <of> LABEL
@@ -74,9 +76,13 @@ def cmd_list() -> None:
                              f"({'automatically: ' + s['catalog']['method'] if s['catalog'].get('method', 'by hand') != 'by hand' else 'by hand'})")
                             if s["catalog"].get("total") else "none yet"}
                 for s in db.due_for_recheck() if s["id"] not in unread]
-    _out({"read": cards, "research": research,
+    busy = unread | {r["supplier_id"] for r in research}
+    review = [{"supplier_id": s["id"], "company": s["company"], "products": s["catalog"].get("total", 0),
+               "source": s["catalog"].get("source", "")} for s in db.needs_review() if s["id"] not in busy]
+    _out({"read": cards, "research": research, "review": review,
           "next_step": "Read every card/pamphlet first (show card <card_id>), then research each supplier "
-                       "(show research <supplier_id>)." if cards or research else "Nothing is waiting."})
+                       "(show research <supplier_id>), then review each catalog (show review <supplier_id>)."
+          if cards or research or review else "Nothing is waiting."})
 
 
 def cmd_show(kind: str, item_id: int) -> None:
@@ -111,8 +117,25 @@ def cmd_show(kind: str, item_id: int) -> None:
               "sections": [{k: x[k] for k in ("id", "name", "parent_id")} for x in sections],
               "products": [{k: p[k] for k in ("id", "section_id", "name", "sku", "details", "description", "price",
                                               "page_url", "image_url", "images")} for p in products]})
+    elif kind == "review":
+        s = db.get_supplier(item_id)
+        if s is None:
+            sys.exit(f"No supplier {item_id}.")
+        products = db.catalog_products(item_id, None, "", 100000)[0]
+        rows = []
+        for p in products:
+            missing = [k for k, ok in (("photo", p["image_url"]), ("specs", p["specs"]), ("files", p["files"]),
+                                       ("description", len(p["description"]) > 80)) if not ok]
+            rows.append({"id": p["id"], "name": p["name"], "page_url": p["page_url"], "sku": p["sku"],
+                         "has": {"photo": bool(p["image_url"]), "more_photos": len(p["images"]),
+                                 "specs": [f"{a}: {b}" for a, b in p["specs"]][:12],
+                                 "files": [f["name"] for f in p["files"]], "description_chars": len(p["description"])},
+                         "missing": missing})
+        _out({"supplier_id": item_id, "company": s["company"], "source": s["catalog"].get("source", ""),
+              "products": rows, "instructions": REVIEW_INSTRUCTIONS,
+              "save_with": f"python -m rolodex.tasks save products {item_id} work/review-{item_id}.json"})
     else:
-        sys.exit("show card <id> | show research <id> | show catalog <id>")
+        sys.exit("show card <id> | show research <id> | show catalog <id> | show review <id>")
 
 
 def _read_json(source: str) -> dict:
@@ -179,8 +202,21 @@ def cmd_save(kind: str, item_id: int, source: str) -> None:
         db.update_supplier(item_id, progress="")
         db.analysis_finished(item_id)
         _out({"saved": True, **summary})
+    elif kind == "products":
+        if db.get_supplier(item_id) is None:
+            sys.exit(f"No supplier {item_id}.")
+        errors = validate(data, PRODUCTS_SCHEMA)
+        if errors:
+            sys.exit(json.dumps({"saved": False, "errors": errors[:30]}, indent=2))
+        result = db.update_products(item_id, data["products"], data.get("note", ""))
+        fields = {"progress": ""}
+        if db.get_supplier(item_id)["status"] == "researching":   # set by `progress` during the review
+            fields["status"] = "active"
+        db.update_supplier(item_id, **fields)
+        db.analysis_finished(item_id)
+        _out({"saved": True, **result})
     else:
-        sys.exit("save card <id> FILE | save research <id> FILE | save catalog <id> FILE")
+        sys.exit("save card <id> FILE | save research <id> FILE | save catalog <id> FILE | save products <id> FILE")
 
 
 _S = {"type": "string"}
@@ -197,6 +233,40 @@ CATALOG_SCHEMA = {
                            "images": {"type": "array", "items": _S}}}},
     },
 }
+
+
+PRODUCTS_SCHEMA = {
+    "type": "object", "required": ["products"],
+    "properties": {
+        "note": _S,
+        "products": {"type": "array", "items": {
+            "type": "object", "required": ["id"],
+            "properties": {"id": _S, "name": _S, "sku": _S, "details": _S, "description": _S, "price": _S,
+                           "image_url": _S, "images": {"type": "array", "items": _S},
+                           "specs": {"type": "array", "items": {"type": "array", "items": _S}},
+                           "files": {"type": "array", "items": {"type": "object", "required": ["name", "url"],
+                                                                "properties": {"name": _S, "url": _S}}}}}},
+    },
+}
+
+REVIEW_INSTRUCTIONS = (
+    "Check this catalog against their website, product by product, the way a buyer would read each "
+    "product page. Open every product's page_url (curl -sL -A 'Mozilla/5.0' --max-time 20; WebFetch "
+    "drops links and images) and look at everything on it: the product photo(s); the full description; "
+    "every specification (dimensions and sizes, weights, capacity, material, colours, pack / case "
+    "counts, temperature ranges, viscosity grades, food-grade ratings such as NSF H1, kosher, halal, "
+    "allergen statements); item numbers for each size; and every document linked from the page - "
+    "safety data sheets (SDS), technical / product data sheets, spec sheets, brochures, certificates "
+    "(give the English / US version of each, and its real URL). Tabs, accordions and 'downloads' "
+    "sections count; if a section loads from another URL, open that too. Add only what the page "
+    "actually shows, in English, with values exactly as stated; never guess. Products listed under "
+    "`missing` need it most, but check them all: something already there can still be incomplete. "
+    'Write {"note": "...", "products": [{"id": "<id from the list>", "specs": [["Label", "value"]], '
+    '"files": [{"name": "Safety data sheet (US)", "url": "https://..."}], "image_url": "...", '
+    '"images": [...], "description": "...", "details": "...", "sku": "..."}]} with only the fields '
+    "you are adding or correcting (specs and files are added to what's there; image_url, description, "
+    "details and sku replace it). With more than about 40 products, split them between subagents "
+    "(one batch each, in parallel) and merge their results into one file before saving.")
 
 
 def _cancelled() -> None:
@@ -241,7 +311,8 @@ def main(argv: list[str]) -> None:
             a = db.analysis()
             if a["state"] != "running":   # started by hand (/analyze in a terminal), not by the app
                 cards = db.unread_cards()
-                planned = list(dict.fromkeys([c["supplier_id"] for c in cards] + [s["id"] for s in db.due_for_recheck()]))
+                planned = list(dict.fromkeys([c["supplier_id"] for c in cards] + [s["id"] for s in db.due_for_recheck()]
+                                             + [s["id"] for s in db.needs_review()]))
                 db.update_analysis(state="running", started_at=db.now(), finished_at=None, planned=planned,
                                    finished=[], current="", summary="", trigger="terminal")
             _out({"ok": True})

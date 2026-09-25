@@ -134,7 +134,7 @@ TAG_GROUPS = ["Product", "Certification", "Capability", "Service area", "Other"]
 # Columns added after the first release; init() adds them to an existing database.
 _ADDED_COLUMNS = {
     "suppliers": {"tags": "TEXT DEFAULT '[]'", "staff_tags": "TEXT DEFAULT '[]'", "removed_tags": "TEXT DEFAULT '[]'",
-                  "progress": "TEXT DEFAULT ''", "catalog": "TEXT DEFAULT '{}'"},
+                  "progress": "TEXT DEFAULT ''", "catalog": "TEXT DEFAULT '{}'", "logo_url": "TEXT DEFAULT ''"},
     "catalog_products": {"specs": "TEXT DEFAULT '[]'", "files": "TEXT DEFAULT '[]'"},
     "cards": {"pages": "TEXT DEFAULT '[]'", "kind": "TEXT DEFAULT 'card'", "read_at": "TEXT",
               "title": "TEXT DEFAULT ''", "pdf_url": "TEXT DEFAULT ''", "pdf_file": "TEXT DEFAULT ''"},
@@ -537,6 +537,16 @@ def checks_for(supplier_id: int) -> list[dict]:
             (supplier_id,))]
 
 
+REVIEW_VERSION = 1   # raise when the catalog review (analyze skill) should look again at every catalog
+
+
+def needs_review() -> list[dict]:
+    """Suppliers whose copied catalog Claude hasn't yet checked against their website, product by
+    product (photos, specs, dimensions, datasheets and safety data sheets the automatic copy missed)."""
+    return [s for s in all_suppliers() if s["status"] == "active" and (s["catalog"] or {}).get("total")
+            and int((s["catalog"] or {}).get("reviewed", 0) or 0) < REVIEW_VERSION]
+
+
 def due_for_recheck() -> list[dict]:
     """Suppliers whose next check date has arrived, oldest first.
 
@@ -620,6 +630,53 @@ def _files(value) -> list[dict]:
             if isinstance(f, dict) and str(f.get("url", "")).startswith(("http://", "https://"))][:8]
 
 
+def update_products(supplier_id: int, updates: list[dict], note: str = "") -> dict:
+    """What the catalog review found: specs and files are added to each product's, the other fields
+    given replace theirs. Marks the catalog reviewed."""
+    changed = 0
+    with connect() as conn:
+        for u in updates:
+            row = conn.execute("SELECT * FROM catalog_products WHERE supplier_id = ? AND id = ?",
+                               (supplier_id, str(u.get("id", "")))).fetchone()
+            if row is None:
+                continue
+            p = _product(row)
+            fields = {}
+            have = {(a.lower(), b.lower()) for a, b in p["specs"]}
+            specs = p["specs"] + [x for x in _specs(u.get("specs")) if (x[0].lower(), x[1].lower()) not in have]
+            if specs != p["specs"]:
+                fields["specs"] = json.dumps(specs[:60])
+            known = {f["url"] for f in p["files"]}
+            files = p["files"] + [f for f in _files(u.get("files")) if f["url"] not in known]
+            if files != p["files"]:
+                fields["files"] = json.dumps(files[:12])
+            for key, limit in (("name", 300), ("sku", 100), ("details", 300), ("description", 4000), ("price", 100)):
+                if str(u.get(key, "")).strip() and str(u[key]).strip() != p[key]:
+                    fields[key] = str(u[key]).strip()[:limit]
+            if str(u.get("image_url", "")).startswith(("http://", "https://")) and u["image_url"] != p["image_url"]:
+                fields["image_url"] = u["image_url"]
+            if isinstance(u.get("images"), list):
+                more = [x for x in u["images"] if isinstance(x, str) and x.startswith(("http://", "https://"))]
+                merged = list(dict.fromkeys(p["images"] + more))[:12]
+                if merged != p["images"]:
+                    fields["images"] = json.dumps(merged)
+            if fields:
+                changed += 1
+                conn.execute(f"UPDATE catalog_products SET {', '.join(k + ' = ?' for k in fields)} "
+                             "WHERE supplier_id = ? AND id = ?", [*fields.values(), supplier_id, p["id"]])
+    s = get_supplier(supplier_id)
+    products = catalog_products(supplier_id, None, "", 100000)[0]
+    summary = {**s["catalog"], "reviewed": REVIEW_VERSION, "reviewed_at": now(),
+               "with_photos": sum(1 for p in products if p["image_url"]),
+               "with_specs": sum(1 for p in products if p["specs"]),
+               "with_files": sum(1 for p in products if p["files"])}
+    if note:
+        summary["review_note"] = note[:1000]
+    update_supplier(supplier_id, catalog=summary)
+    return {"changed": changed, "total": len(products), "with_photos": summary["with_photos"],
+            "with_specs": summary["with_specs"], "with_files": summary["with_files"]}
+
+
 def catalog_sections(supplier_id: int) -> list[dict]:
     """Sections in their order, each with `count` = products in it and everything below it."""
     with connect() as conn:
@@ -676,7 +733,7 @@ def catalog_products(supplier_id: int | None = None, section_ids: list[str] | No
             " JOIN suppliers sup ON sup.id = p.supplier_id")
     with connect() as conn:
         total = conn.execute("SELECT COUNT(*)" + base + sql_where, args).fetchone()[0]
-        rows = conn.execute("SELECT p.*, sup.company AS company" + base + sql_where + f" ORDER BY {order} LIMIT ? OFFSET ?",
+        rows = conn.execute("SELECT p.*, sup.company AS company, sup.logo_url AS logo_url" + base + sql_where + f" ORDER BY {order} LIMIT ? OFFSET ?",
                             [*args, limit, offset]).fetchall()
     return [_product(r) for r in rows], total
 
@@ -685,7 +742,7 @@ def all_catalog_products() -> list[dict]:
     """Every product in every catalog with its supplier and section names (for Ask Claude)."""
     with connect() as conn:
         rows = conn.execute(
-            "SELECT p.*, sup.company AS company, s.name AS section FROM catalog_products p"
+            "SELECT p.*, sup.company AS company, sup.logo_url AS logo_url, s.name AS section FROM catalog_products p"
             " LEFT JOIN catalog_sections s ON s.supplier_id = p.supplier_id AND s.id = p.section_id"
             " JOIN suppliers sup ON sup.id = p.supplier_id"
             " ORDER BY sup.company COLLATE NOCASE, s.position, p.position").fetchall()

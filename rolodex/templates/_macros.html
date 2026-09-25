@@ -1,3 +1,5 @@
+{% macro logo(s, size="") %}<span class="logo {{ size }}" aria-hidden="true">{% if img(s.logo_url) %}<img src="{{ img(s.logo_url, 200) }}" alt="" loading="lazy">{% else %}{{ (s.company or "?")[:1]|upper }}{% endif %}</span>{% endmacro %}
+
 {% macro product_card(p, sid) %}
 <a class="product" href="/supplier/{{ sid }}/catalog/item/{{ p.id|urlencode }}">
   <span class="pimg">{% if img(p.image_url) %}<img src="{{ img(p.image_url, 400) }}" alt="" loading="lazy">{% else %}<img src="/static/no-photo.svg" alt="">{% endif %}</span>

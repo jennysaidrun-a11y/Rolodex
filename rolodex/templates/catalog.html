@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import product_card, pager, back %}
+{% from "_macros.html" import product_card, pager, back, logo %}
 {% block title %}{{ current.name ~ " · " if current }}{{ s.company }} catalog · Supplier Rolodex{% endblock %}
 {% block wide %}wide{% endblock %}
 {% macro tree(parent, depth) %}
@@ -15,7 +15,7 @@
 {{ back("/supplier/" ~ s.id, s.company) }}
 <div class="store-head">
   <div>
-    <h1>{{ s.company }} <span class="muted">catalog</span></h1>
+    <h1 class="with-logo">{{ logo(s, "big") }}<span>{{ s.company }} <span class="muted">catalog</span></span></h1>
     <p class="muted">{{ s.catalog.total or 0 }} products{% if s.catalog.crawled_at %} · copied from their website {{ s.catalog.crawled_at[:10] }}{% endif %}
       {% if s.catalog.source|link %} · <a href="{{ s.catalog.source|link }}" target="_blank" rel="noopener">their site</a>{% endif %}</p>
     {% if s.catalog.note %}<details class="muted note"><summary>About this copy</summary>{{ s.catalog.note }}</details>{% endif %}

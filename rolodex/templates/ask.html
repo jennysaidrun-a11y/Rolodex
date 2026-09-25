@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import logo %}
 {% block main %}
 <section class="card">
   <p class="muted">You asked</p>
@@ -9,9 +10,9 @@
 {% if matches %}
 <ul class="list">
   {% for s, why in matches %}
-  <li><a href="/supplier/{{ s.id }}"><strong>{{ s.company }}</strong>
+  <li><a href="/supplier/{{ s.id }}" class="with-logo">{{ logo(s) }}<span class="who"><strong>{{ s.company }}</strong>
     {% if s.needs_attention %}<span class="tag warn">Needs attention</span>{% endif %}
-    <span class="muted">{{ s.categories|join(", ") }}</span><span class="summary">{{ why }}</span></a></li>
+    <span class="muted">{{ s.categories|join(", ") }}</span><span class="summary">{{ why }}</span></span></a></li>
   {% endfor %}
 </ul>
 {% endif %}

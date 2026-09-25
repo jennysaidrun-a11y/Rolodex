@@ -51,8 +51,12 @@ async def lifespan(app: FastAPI):
     if config.GIT_SYNC:
         gitsync.start_background()
     if os.environ.get("ROLODEX_CATALOG_COMPLETE", "1") == "1":
-        from . import catalog
-        threading.Thread(target=catalog.complete_outdated, name="catalog-upgrade", daemon=True).start()
+        from . import catalog, logos
+
+        def upgrade():
+            logos.ensure_all()
+            catalog.complete_outdated()
+        threading.Thread(target=upgrade, name="catalog-upgrade", daemon=True).start()
     yield
 
 

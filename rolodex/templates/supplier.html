@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ s.company }} · Supplier Rolodex{% endblock %}
 {% macro src(url) %}{% if url|link %} <a class="src" href="{{ url|link }}" target="_blank" rel="noopener">source</a>{% endif %}{% endmacro %}
-{% from "_macros.html" import back, product_card %}
+{% from "_macros.html" import back, product_card, logo %}
 {% block main %}
 {{ back("/", "Suppliers") }}
 <section class="card">
   <div class="head">
     <div>
-      <h1>{{ s.company }}</h1>
+      <h1 class="with-logo">{{ logo(s, "big") }}<span>{{ s.company }}</span></h1>
       <p class="muted cat-links">{% for c in s.categories %}<a href="/?category={{ c|urlencode }}">{{ c }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
       {% if s.all_tags %}<div class="chips profile-tags">{% for t in s.all_tags %}<a class="chip" href="/?tag={{ t.name|urlencode }}" title="{{ t.group }}: show all suppliers with this tag">{{ t.name }}</a>{% endfor %}</div>{% endif %}
     </div>
