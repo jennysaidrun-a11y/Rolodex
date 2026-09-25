@@ -47,6 +47,8 @@ ANALYSIS = os.environ.get("ANALYSIS") or ("api" if os.environ.get("ANTHROPIC_API
 USE_API = ANALYSIS == "api"
 
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5")
+# Ask Claude and "Search every catalog" answers: Sonnet is quick and plenty for finding things.
+SEARCH_MODEL = os.environ.get("SEARCH_MODEL", "claude-sonnet-5")
 RECHECK_DAYS = int(os.environ.get("RECHECK_DAYS", "90"))
 # The app rechecks due suppliers on its own in the background; set to 0 to turn off
 # (e.g. when a scheduled task runs `python -m rolodex.recheck` instead).

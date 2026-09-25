@@ -6,13 +6,25 @@
 {{ back("/", "Suppliers") }}
 <section class="card">
   <h1>Search every catalog</h1>
-  <form method="get" class="store-search">
-    <input type="search" name="q" value="{{ q }}" placeholder="e.g. bread bag, 9x13 pan, stretch film, item #" autofocus>
+  <form method="get" action="/products" class="store-search">
+    <input type="search" name="q" value="{{ q }}" placeholder="e.g. bread bag, 9x13 pan, stretch film, item #" {% if not question %}autofocus{% endif %}>
     <button class="btn">Search</button>
   </form>
+  <p class="muted ask-label"><label for="question">Or tell Claude what you need and it will look through every catalog</label></p>
+  <form method="post" action="/products/ask" class="ask" onsubmit="this.querySelector('button').textContent='Thinking… (up to a minute)'">
+    <textarea id="question" name="question" rows="2" required placeholder="e.g. something to wrap pallets for shipping, or a food-safe lube for the mixer gearbox">{{ question or "" }}</textarea>
+    <button class="btn">Ask Claude</button>
+  </form>
 </section>
-{% if q %}
+{% if question %}
+<section class="card">
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if answer %}<p class="answer">{{ answer }}</p>{% endif %}
+</section>
+{% elif q %}
 <p class="muted">{{ total }} product{{ "s" if total != 1 }} matching “{{ q }}”</p>
+{% endif %}
+{% if question or q %}
 <div class="product-grid">
   {% for p in products %}
   <a class="product" href="/supplier/{{ p.supplier_id }}/catalog/item/{{ p.id|urlencode }}">
@@ -21,9 +33,10 @@
     <span class="psupplier">{{ p.company }}</span>
     {% if p.sku %}<span class="psku">#{{ p.sku }}</span>{% endif %}
     {% if p.price %}<span class="pprice">{{ p.price }}</span>{% endif %}
+    {% if p.why %}<span class="pwhy">{{ p.why }}</span>{% endif %}
   </a>
   {% endfor %}
 </div>
-{{ pager(page_no, pages, "?q=" ~ q|urlencode ~ "&") }}
+{% if q %}{{ pager(page_no, pages, "?q=" ~ q|urlencode ~ "&") }}{% endif %}
 {% endif %}
 {% endblock %}

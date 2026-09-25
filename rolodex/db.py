@@ -646,6 +646,17 @@ def catalog_products(supplier_id: int | None = None, section_ids: list[str] | No
     return [_product(r) for r in rows], total
 
 
+def all_catalog_products() -> list[dict]:
+    """Every product in every catalog with its supplier and section names (for Ask Claude)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT p.*, sup.company AS company, s.name AS section FROM catalog_products p"
+            " LEFT JOIN catalog_sections s ON s.supplier_id = p.supplier_id AND s.id = p.section_id"
+            " JOIN suppliers sup ON sup.id = p.supplier_id"
+            " ORDER BY sup.company COLLATE NOCASE, s.position, p.position").fetchall()
+    return [_product(r) for r in rows]
+
+
 def catalog_product(supplier_id: int, product_id: str) -> dict | None:
     with connect() as conn:
         row = conn.execute("SELECT * FROM catalog_products WHERE supplier_id = ? AND id = ?",

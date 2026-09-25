@@ -185,6 +185,8 @@ pre.log { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; back
 .pimg img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .pname { font-weight: 600; font-size: .92rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .psku, .psupplier { font-size: .78rem; color: var(--muted); }
+.pwhy { font-size: .82rem; }
+.ask-label { margin: 14px 0 6px; }
 .pdetails { font-size: .8rem; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pprice { font-weight: 700; color: var(--accent); margin-top: auto; }
 .pager { display: flex; gap: 12px; justify-content: center; align-items: center; margin: 18px 0; }

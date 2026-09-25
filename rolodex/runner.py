@@ -203,21 +203,13 @@ def start_rechecks(interval_seconds: int = 1800) -> None:
     threading.Thread(target=loop, name="rechecks", daemon=True).start()
 
 
-def ask(question: str, directory_json: str, timeout: int = 240) -> dict:
-    """Answer a plain-English question with Claude Code from the supplier directory.
-    Returns {answer, matches: [{supplier_id, why}]}; raises RuntimeError with a readable reason."""
+def _ask(prompt: str, stdin: str, timeout: int) -> dict:
+    """Run a one-shot question through Claude Code (Sonnet) and parse its {answer, matches} JSON."""
     import json
     import re
-    prompt = (
-        "You help a commercial bakery's purchasing staff pick suppliers. The supplier directory (JSON) is "
-        "given on standard input. Answer the question below using only that directory. Recommend the "
-        "suppliers that best fit, one sentence each on why, and mention anything that argues against one "
-        "(a recall, a lapsed certification, out of area, needs attention). If nothing fits, say so plainly "
-        "and suggest what kind of supplier to look for. Keep it short. Don't use any tools.\n\n"
-        'Reply with only a JSON object: {"answer": "<your answer>", "matches": [{"supplier_id": <id>, '
-        '"why": "<one sentence>"}]}\n\nQuestion: ' + question)
     try:
-        r = subprocess.run([config.CLAUDE_COMMAND, "-p", prompt, "--output-format", "json"], input=directory_json,
+        r = subprocess.run([config.CLAUDE_COMMAND, "-p", prompt, "--output-format", "json",
+                            "--model", config.SEARCH_MODEL], input=stdin,
                            capture_output=True, text=True, timeout=timeout, cwd=config.ROOT)
     except subprocess.TimeoutExpired:
         raise RuntimeError("Claude took too long to answer. Try a shorter question.")
@@ -236,8 +228,36 @@ def ask(question: str, directory_json: str, timeout: int = 240) -> dict:
         result = json.loads(m.group(0)) if m else {"answer": text, "matches": []}
     except ValueError:
         result = {"answer": text, "matches": []}
-    result.setdefault("matches", [])
-    result["matches"] = [x for x in result["matches"] if isinstance(x, dict) and str(x.get("supplier_id", "")).isdigit()]
+    matches = result.get("matches")
+    return {"answer": str(result.get("answer", "")),
+            "matches": [x for x in matches if isinstance(x, dict)] if isinstance(matches, list) else []}
+
+
+def ask(question: str, directory_json: str, timeout: int = 240) -> dict:
+    """Answer a plain-English question with Claude Code from the supplier directory.
+    Returns {answer, matches: [{supplier_id, why}]}; raises RuntimeError with a readable reason."""
+    prompt = (
+        "You help a commercial bakery's purchasing staff pick suppliers. The supplier directory (JSON) is "
+        "given on standard input. Answer the question below using only that directory. Recommend the "
+        "suppliers that best fit, one sentence each on why, and mention anything that argues against one "
+        "(a recall, a lapsed certification, out of area, needs attention). If nothing fits, say so plainly "
+        "and suggest what kind of supplier to look for. Keep it short. Don't use any tools.\n\n"
+        'Reply with only a JSON object: {"answer": "<your answer>", "matches": [{"supplier_id": <id>, '
+        '"why": "<one sentence>"}]}\n\nQuestion: ' + question)
+    result = _ask(prompt, directory_json, timeout)
+    result["matches"] = [x for x in result["matches"] if str(x.get("supplier_id", "")).isdigit()]
     for x in result["matches"]:
         x["supplier_id"] = int(x["supplier_id"])
-    return {"answer": str(result.get("answer", "")), "matches": result["matches"]}
+    return result
+
+
+def ask_products(question: str, products_json: str, timeout: int = 240) -> dict:
+    """Find catalog products for a plain-English request with Claude Code.
+    Returns {answer, matches: [{key, why}]}; raises RuntimeError with a readable reason."""
+    from .claude import PRODUCT_INSTRUCTIONS
+    prompt = (PRODUCT_INSTRUCTIONS + " The catalog list is given on standard input. Don't use any tools.\n\n"
+              'Reply with only a JSON object: {"answer": "<your answer>", "matches": [{"key": "<key>", '
+              '"why": "<one sentence>"}]}\n\nRequest: ' + question)
+    result = _ask(prompt, products_json, timeout)
+    result["matches"] = [x for x in result["matches"] if isinstance(x.get("key"), str)]
+    return result

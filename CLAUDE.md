@@ -16,8 +16,10 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
   `.claude/skills/analyze/SKILL.md`, which works only through `python -m rolodex.tasks` and
   `python -m rolodex.catalog`, and reports progress with `tasks begin/current/progress/finish`
   (the `analysis` table and `suppliers.progress` drive the progress bar; Cancel kills the process
-  group). **Ask Claude** also goes through `runner.ask` (directory JSON on stdin). `api` mode calls the
-  Claude API from `rolodex/claude.py` instead.
+  group). **Ask Claude** also goes through `runner.ask` (directory JSON on stdin), and **Ask Claude**
+  on the Products page (`/products/ask`) through `runner.ask_products` (every catalog product,
+  compact, on stdin; answers with product keys). Both use `config.SEARCH_MODEL` (Sonnet). `api`
+  mode calls the Claude API from `rolodex/claude.py` instead.
 - Prompts and schemas for reading and research live in `rolodex/claude.py` (`card_prompt`,
   `research_prompt`, `card_schema`, `research_schema`), shared by both modes; saving goes through
   `recheck.save_reading` / `save_research`. If you add a profile field, add it to the research
