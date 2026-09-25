@@ -270,3 +270,33 @@ print(json.dumps({{"result": 'Here: {{"answer": "Bag Co sells them.", "matches":
     assert "Ask Claude" in client.get("/").text
     page = client.post("/ask", data={"question": "Bread bags?"}).text
     assert "Bag Co sells them." in page and f"/supplier/{sid}" in page
+
+
+def test_ask_claude_finds_catalog_products(client, tmp_path, monkeypatch):
+    sid = new_supplier()
+    db.save_catalog(sid, CATALOG)
+    # Claude Code gets the whole catalog on stdin and Sonnet as the model; it answers with product keys.
+    script = ("import sys, json\n"
+              "args = sys.argv[1:]; rows = json.loads(sys.stdin.read())\n"
+              "assert args[args.index('--model') + 1] == 'claude-sonnet-5'\n"
+              "key = next(r['key'] for r in rows if r['name'].startswith('Stretch film'))\n"
+              "answer = {'answer': 'Stretch film wraps pallets.', 'matches': [{'key': key, 'why': 'Pallet wrap'},"
+              " {'key': '999/nope', 'why': 'x'}]}\n"
+              "print(json.dumps({'result': json.dumps(answer)}))\n")
+    monkeypatch.setattr(config, "CLAUDE_COMMAND", fake_claude(tmp_path, script))
+    page = client.post("/products/ask", data={"question": "something to wrap pallets"}).text
+    assert "Stretch film wraps pallets." in page and "Stretch film 18 in" in page and "Pallet wrap" in page
+    assert f"/supplier/{sid}/catalog/item/SF-1" in page and "999" not in page
+
+
+def test_ask_claude_products_api(client, monkeypatch):
+    sid = new_supplier()
+    db.save_catalog(sid, CATALOG)
+    monkeypatch.setattr(config, "USE_API", True)
+    seen = {}
+    def ask_products(question, products):
+        seen["n"] = len(products)
+        return {"answer": "Try the film.", "matches": [{"key": f"{sid}/SF-1", "why": "Wraps pallets"}]}
+    monkeypatch.setattr(app_module.claude, "ask_products", ask_products)
+    page = client.post("/products/ask", data={"question": "pallet wrap"}).text
+    assert seen["n"] == len(CATALOG["products"]) and "Try the film." in page and "Wraps pallets" in page

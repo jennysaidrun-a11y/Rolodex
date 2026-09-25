@@ -138,8 +138,8 @@ ANSWER_SCHEMA = _schema({
 })
 
 
-def _create(**kwargs):
-    model = config.CLAUDE_MODEL
+def _create(model: str = "", **kwargs):
+    model = model or config.CLAUDE_MODEL
     extra = {}
     if model in _FALLBACK_MODELS:
         extra = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
@@ -334,5 +334,51 @@ def ask(question: str, suppliers: list[dict], notes: dict[int, list[str]]) -> di
         ],
         messages=[{"role": "user", "content": question}],
         output_config={"effort": "low", "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
+        model=config.SEARCH_MODEL,
+    )
+    return _json_result(response)
+
+
+PRODUCT_ANSWER_SCHEMA = _schema({
+    "answer": STR,
+    "matches": {"type": "array", "items": _schema({"key": STR, "why": STR})},
+})
+
+PRODUCT_INSTRUCTIONS = (
+    "You help a commercial bakery's staff find products in their suppliers' catalogs. Every product on "
+    "file is in the catalog list (JSON; key, supplier, section, name, item number, price, details). "
+    "Answer the request using only that list: pick the products that fit best (up to 24, best first), "
+    "one short sentence each on why, and use each product's key exactly as given. Understand what they "
+    "need, not just their words (\"something to wrap pallets\" is stretch film). If nothing fits, say so "
+    "plainly and say what kind of supplier would sell it. Keep the answer to two or three sentences.")
+
+
+def product_list(products: list[dict]) -> str:
+    """The catalogs, compact, for a product question: one row per product."""
+    rows = []
+    for p in products:
+        row = {"key": f"{p['supplier_id']}/{p['id']}", "supplier": p["company"], "section": p.get("section") or "",
+               "name": p["name"]}
+        for k in ("sku", "price"):
+            if p.get(k):
+                row[k] = p[k]
+        text = " ".join((p.get("details") or p.get("description") or "").split())
+        if text:
+            row["details"] = text[:160]
+        rows.append(row)
+    return json.dumps(rows, separators=(",", ":"), ensure_ascii=False)
+
+
+def ask_products(question: str, products: list[dict]) -> dict:
+    """Find catalog products for a plain-English request; returns {answer, matches:[{key, why}]}."""
+    response = _create(
+        max_tokens=8000,
+        system=[
+            {"type": "text", "text": PRODUCT_INSTRUCTIONS},
+            {"type": "text", "text": "Catalog (JSON):\n" + product_list(products), "cache_control": {"type": "ephemeral"}},
+        ],
+        messages=[{"role": "user", "content": question}],
+        output_config={"effort": "low", "format": {"type": "json_schema", "schema": PRODUCT_ANSWER_SCHEMA}},
+        model=config.SEARCH_MODEL,
     )
     return _json_result(response)

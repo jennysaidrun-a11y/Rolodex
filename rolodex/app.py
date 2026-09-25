@@ -434,3 +434,33 @@ def product_search(request: Request, q: str = "", page_no: int = Query(1, alias=
     products, total = db.catalog_products(None, None, q, PER_PAGE, (page_no - 1) * PER_PAGE) if q.strip() else ([], 0)
     return page(request, "products.html", q=q, products=products, total=total, page_no=page_no,
                 pages=max(1, -(-total // PER_PAGE)))
+
+
+@app.post("/products/ask")
+async def product_ask(request: Request, question: str = Form(...)):
+    """Search every catalog in plain English: Claude (Sonnet) reads the product list and picks."""
+    products = db.all_catalog_products()
+    by_key = {f"{p['supplier_id']}/{p['id']}": p for p in products}
+    result, error = {"answer": "", "matches": []}, ""
+    if not products:
+        error = "There are no catalogs yet. Analyze a supplier first."
+    elif config.USE_API:
+        try:
+            result = await run_in_threadpool(claude.ask_products, question, products)
+        except claude.ClaudeError as e:
+            error = str(e)
+    elif not runner.available():
+        try:
+            result = await run_in_threadpool(runner.ask_products, question, claude.product_list(products))
+        except RuntimeError as e:
+            error = str(e)
+    else:
+        error = "Asking Claude needs Claude Code (in the Codespace) or the Claude API. Use the keyword search."
+    matches, seen = [], set()
+    for m in result.get("matches", []):
+        key = str(m.get("key", ""))
+        if key in by_key and key not in seen:
+            seen.add(key)
+            matches.append(dict(by_key[key], why=str(m.get("why", ""))))
+    return page(request, "products.html", q="", question=question, answer=result.get("answer", ""),
+                products=matches, total=len(matches), page_no=1, pages=1, error=error)
