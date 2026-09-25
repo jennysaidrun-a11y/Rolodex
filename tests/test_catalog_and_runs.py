@@ -333,4 +333,54 @@ def test_catalog_review_adds_what_the_pages_show(client, capsys, monkeypatch):
     ok, pending = run_tasks(capsys, "list")
     assert pending["review"] == []
     page = client.get(f"/supplier/{sid}/catalog/item/SF-1").text
-    assert "80 gauge" in page and "Safety data sheet (US)" in page
+    assert "80 gauge" in page and "Safety data sheet" in page and f"/supplier/{sid}/doc/0?p=SF-1" in page
+    assert "sds/sf1.pdf" not in page   # viewed in the app, not linked
+
+
+def test_product_tables_and_document_viewer(client, monkeypatch):
+    from rolodex import docview, present
+    import pypdfium2 as pdfium, io
+    files = [{"name": "Safety data sheet (EN, Mexico) PDF / 331.2 KB All languages ﻿", "url": "https://oil.example/SDS_AU_MX_EN.pdf"},
+             {"name": "Español", "url": "https://oil.example/SDS_AU_MX_ES.pdf"},
+             {"name": "Product information (EN) PDF / 341.7 KB", "url": "https://oil.example/AU_PI_US_en.pdf"},
+             {"name": "Safety data sheet (EN, United States) PDF / 313.77 KB", "url": "https://oil.example/SDS_AU_US_EN.pdf"}]
+    docs = present.documents(files)
+    assert [(d["kind"], d["language"], d["region"]) for d in docs] == [
+        ("Safety data sheet", "English", "United States"), ("Safety data sheet", "English", "Mexico"),
+        ("Safety data sheet", "Spanish", "Mexico"), ("Product data sheet", "English", "")]
+    v = present.view({"details": "Film", "specs": [["Article-No", "340557 Synthetic fluid for compressors"]],
+                      "description": "Article-No: 340557 Synthetic fluid for compressors\nStretch film for wrapping.\n"
+                                     "Codes and Presentations:\nCH5235 – Stretch Film 500 mm x 23 mic – Without Handle\n"
+                                     "Applications:\nPallets\nBoxes", "files": files})
+    assert v["specs"][0] == ["Article-No", "340557"]
+    assert v["sizes"]["rows"] == [["CH5235", "Stretch Film 500 mm x 23 mic – Without Handle", "500 mm x 23 mic"]]
+    assert {"heading": "Applications", "points": ["Pallets", "Boxes"]} in v["blocks"]
+    assert [b["text"] for b in v["blocks"] if "text" in b] == ["Stretch film for wrapping."]
+
+    sid = new_supplier()
+    db.save_catalog(sid, {"sections": [], "products": [{"id": "AU-46", "name": "AU-46", "files": files}]})
+    page = client.get(f"/supplier/{sid}/catalog/item/AU-46").text
+    assert "SDS_AU_US_EN.pdf" not in page and f"/supplier/{sid}/doc/3?p=AU-46" in page
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(612, 792); pdf.new_page(612, 792)
+    buf = io.BytesIO(); pdf.save(buf)
+    asked = []
+    monkeypatch.setattr(docview, "fetch", lambda u: asked.append(u) or buf.getvalue())
+    viewer = client.get(f"/supplier/{sid}/doc/3?p=AU-46").text
+    assert "2 pages" in viewer and "United States" in viewer and asked == ["https://oil.example/SDS_AU_US_EN.pdf"]
+    img = client.get(f"/supplier/{sid}/doc/3/page/2?p=AU-46")
+    assert img.status_code == 200 and img.content[:4] == b"\x89PNG"
+    assert client.get(f"/supplier/{sid}/doc/3/page/3?p=AU-46").status_code == 404
+    assert client.get(f"/supplier/{sid}/doc/9?p=AU-46").status_code == 404   # only the product's own documents
+
+
+def test_check_photos_replaces_broken_ones(client, monkeypatch):
+    monkeypatch.setenv("ROLODEX_CHECK_PHOTOS", "1")
+    sid = new_supplier()
+    db.save_catalog(sid, {"sections": [], "products": [
+        {"id": "a", "name": "A", "image_url": "https://x.example/broken.jpg", "images": ["https://x.example/good.jpg"]},
+        {"id": "b", "name": "B", "image_url": "https://x.example/good.jpg"}]})
+    monkeypatch.setattr(images, "fetch_image", lambda u, w=0: None if "broken" in u else ("f", "image/jpeg"))
+    res = catalog.check_photos(sid, minutes=1)
+    assert res["broken_replaced"] == 1 and db.catalog_product(sid, "a")["image_url"].endswith("good.jpg")
+    assert db.get_supplier(sid)["catalog"]["photos_checked"] == catalog.PHOTO_CHECK_VERSION

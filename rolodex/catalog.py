@@ -21,6 +21,7 @@ from __future__ import annotations
 import gzip
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -548,11 +549,49 @@ def complete(supplier_id: int, minutes: float = 20) -> dict:
     """After any catalog copy: open category pages for the models on them, find missing photos, then
     read each product's page for its specs, dimensions, datasheets and description."""
     from . import db
-    res = {"models": expand(supplier_id, minutes * 0.4), "photos": fill_photos(supplier_id, minutes * 0.2),
+    res = {"models": expand(supplier_id, minutes * 0.4), "photos": check_photos(supplier_id, minutes * 0.2),
            "specs": fill_specs(supplier_id, minutes * 0.4)}
     s = db.get_supplier(supplier_id)
     db.update_supplier(supplier_id, catalog={**s["catalog"], "completed": COMPLETE_VERSION})
     return res
+
+
+PHOTO_CHECK_VERSION = 1   # raise to double-check every catalog's photos again at the next app start
+
+
+def check_photos(supplier_id: int, minutes: float = 15) -> dict:
+    """Double-check photos: load every product's photo the way the app shows it; one that doesn't load
+    is replaced by the product's next photo that does, then every product still without a photo gets
+    its page read again for one (fill_photos)."""
+    from . import db
+    from .images import fetch_image
+    products, _ = db.catalog_products(supplier_id, None, "", 100000)
+    works: dict[str, bool] = {}
+
+    def ok(u: str) -> bool:
+        if os.environ.get("ROLODEX_CHECK_PHOTOS", "1") == "0":   # tests: offline
+            return True
+        if u not in works:
+            works[u] = fetch_image(u, 400) is not None
+        return works[u]
+
+    deadline = time.time() + minutes * 60 * 0.5
+    replaced = dropped = 0
+    with db.connect() as conn:
+        for p in products:
+            photos = [u for u in [p["image_url"]] + list(p["images"]) if u]
+            if not photos or time.time() > deadline:
+                continue
+            good = [u for u in photos if ok(u)]
+            if good != photos:
+                replaced += bool(good)
+                dropped += not good
+                conn.execute("UPDATE catalog_products SET image_url = ?, images = ? WHERE supplier_id = ? AND id = ?",
+                             (good[0] if good else "", json.dumps(good[1:12]), supplier_id, p["id"]))
+    res = fill_photos(supplier_id, minutes * 0.5)
+    s = db.get_supplier(supplier_id)
+    db.update_supplier(supplier_id, catalog={**s["catalog"], "photos_checked": PHOTO_CHECK_VERSION})
+    return {**res, "broken_replaced": replaced, "broken_removed": dropped}
 
 
 def fill_specs(supplier_id: int, minutes: float = 10) -> dict:
@@ -635,6 +674,11 @@ def complete_outdated() -> None:
                 logging.getLogger("rolodex.catalog").info("Completing %s's catalog: %s", s["company"], complete(s["id"]))
             except Exception as e:
                 logging.getLogger("rolodex.catalog").warning("Couldn't complete %s's catalog: %s", s["company"], e)
+        elif cat.get("total") and cat.get("photos_checked", 0) < PHOTO_CHECK_VERSION:
+            try:
+                logging.getLogger("rolodex.catalog").info("Checking %s's photos: %s", s["company"], check_photos(s["id"]))
+            except Exception as e:
+                logging.getLogger("rolodex.catalog").warning("Couldn't check %s's photos: %s", s["company"], e)
 
 
 def fill_photos(supplier_id: int, minutes: float = 15) -> dict:

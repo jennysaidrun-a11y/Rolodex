@@ -103,7 +103,7 @@ def test_complete_adds_specs_and_english(client, monkeypatch):  # noqa: F811
     assert ["Material", "LDPE"] in p["specs"] and p["files"][0]["url"].endswith("datasheet.pdf")
     assert db.catalog_products(sid, None, "LDPE", 10)[1] == 1   # keyword search sees the specs
     page = client.get(f"/supplier/{sid}/catalog/item/bb").text
-    assert "Specifications" in page and "Case count" in page and "bread-bag-datasheet.pdf" in page
+    assert "Specifications" in page and "Case count" in page and "Data sheet" in page and "/doc/0?p=" in page
 
 
 def test_english_version_of_a_site_is_preferred(monkeypatch):

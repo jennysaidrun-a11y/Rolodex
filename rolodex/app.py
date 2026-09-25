@@ -16,14 +16,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
 
-from . import claude, config, db, gitsync, recheck, runner
+from . import claude, config, db, docview, gitsync, present, recheck, runner
 from .images import fetch_image
 
 HERE = Path(__file__).resolve().parent
@@ -429,7 +429,36 @@ def catalog_item(request: Request, supplier_id: int, product_id: str):
         trail.insert(0, x)
         x = by_id.get(x["parent_id"])
     prev_id, next_id = db.catalog_neighbours(supplier_id, p)
-    return page(request, "product.html", s=s, p=p, trail=trail, prev_id=prev_id, next_id=next_id)
+    return page(request, "product.html", s=s, p=p, v=present.view(p), trail=trail, prev_id=prev_id, next_id=next_id)
+
+
+def _doc(supplier_id: int, product_id: str, index: int) -> tuple[dict, dict, dict]:
+    """Only documents listed on a catalog product can be viewed (the viewer is not an open proxy)."""
+    s = _get(supplier_id)
+    p = db.catalog_product(supplier_id, product_id)
+    if p is None or not 0 <= index < len(p["files"]) or not p["files"][index].get("url", "").startswith(("http://", "https://")):
+        raise HTTPException(404, "That document isn't in the catalog any more.")
+    row = next((d for d in present.documents(p["files"]) if d["index"] == index), None)
+    return s, p, row or {"kind": "Document", "language": "", "region": "", "url": p["files"][index]["url"]}
+
+
+@app.get("/supplier/{supplier_id}/doc/{index}")
+async def doc_view(request: Request, supplier_id: int, index: int, p: str):
+    """A safety data sheet or spec sheet, shown in the app page by page (read from their site, not saved)."""
+    s, prod, d = _doc(supplier_id, p, index)
+    data = await run_in_threadpool(docview.fetch, d["url"])
+    pages = await run_in_threadpool(docview.page_count, data) if data else 0
+    return page(request, "doc.html", s=s, p=prod, d=d, index=index, pages=pages)
+
+
+@app.get("/supplier/{supplier_id}/doc/{index}/page/{number}")
+async def doc_page(supplier_id: int, index: int, number: int, p: str, w: int = 1200):
+    _, _, d = _doc(supplier_id, p, index)
+    data = await run_in_threadpool(docview.fetch, d["url"])
+    png = await run_in_threadpool(docview.render, data, number, min(max(w, 400), 2000)) if data else None
+    if png is None:
+        raise HTTPException(404, "No such page.")
+    return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/products")

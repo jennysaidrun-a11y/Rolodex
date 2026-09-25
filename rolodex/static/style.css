@@ -232,3 +232,21 @@ pre.log { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; back
 .specs th { width: 38%; font-weight: 600; color: var(--muted); }
 .specs tr:nth-child(odd) { background: var(--bg); }
 .files { padding-left: 18px; margin: 4px 0 14px; } .files li { margin: 4px 0; overflow-wrap: anywhere; }
+
+/* Product tables: sizes / item numbers, documents; in-app document viewer */
+.table-wrap { overflow-x: auto; margin: 4px 0 14px; }
+.table-wrap .specs { margin: 0; }
+.ptable { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.ptable th, .ptable td { text-align: left; vertical-align: middle; padding: 7px 10px; border-top: 1px solid var(--line); }
+.ptable thead th { background: var(--proof); color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; border-top: 0; white-space: nowrap; }
+.ptable tbody tr:nth-child(even) { background: var(--bg); }
+.ptable td:first-child { font-weight: 600; }
+.docs td:last-child { text-align: right; width: 1%; }
+.docs tr.sds td:first-child { color: var(--bad, #b83a2e); }
+.btn.small { padding: 5px 12px; font-size: .85rem; }
+.points { margin: 4px 0 12px; padding-left: 20px; } .points li { margin: 3px 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.doc-pages { display: grid; gap: 18px; justify-items: center; }
+.doc-page { margin: 0; width: 100%; max-width: 900px; }
+.doc-page img { width: 100%; height: auto; display: block; background: #fff; border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow, 0 1px 3px rgba(0,0,0,.1)); }
+.doc-page figcaption { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 4px; }

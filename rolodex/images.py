@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps
 
 from . import config
 
@@ -106,6 +106,6 @@ def fetch_image(url: str, width: int = 0) -> tuple[Path, str] | None:
             buf = io.BytesIO()
             img.convert("RGB").save(buf, "JPEG", quality=82)
             small.write_bytes(buf.getvalue())
-        except (UnidentifiedImageError, OSError, ValueError):
+        except Exception:   # a format this Pillow can't read: the browser gets the original
             return original, kind
     return small, "image/jpeg"
