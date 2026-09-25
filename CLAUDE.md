@@ -1,7 +1,17 @@
 # Supplier Rolodex
 
-Web app for a commercial bakery: business-card photos in, researched supplier profiles out,
-rechecked every 90 days, searchable by keyword or by asking Claude. See README.md.
+Supplier rolodex for a commercial bakery: business-card and pamphlet-cover photos in, researched
+supplier profiles out, rechecked every 90 days, searchable by keyword, category, tag or question.
+
+**The live app is a claude.ai page: https://claude.ai/artifact/L1xZMaHagpDhwLrykRnxF2**
+(source `artifact/index.html`, one self-contained file; publish updates with the Artifact tool,
+`url` above, keeping its capabilities db, assets, sample, user). Its data is the page's database:
+`suppliers/<id>` documents and `config/categories`. `/analyze` and `/find-supplier`
+(`.claude/skills/`) read and write it with ArtifactData, using `tools/analyze.py`, which reuses the
+prompts and schemas in `rolodex/claude.py`. Keep the field names in `artifact/index.html`,
+`tools/analyze.py` and the prompts in step.
+
+The Python app (`rolodex/`, self-hosted, optional) is the same product on a server:
 
 - Python / FastAPI / SQLite / Jinja; no JS build step. Must stay usable on a phone.
 - Two analysis modes (`config.ANALYSIS`): `api` (the app calls Claude) and `claude-code` (the app

@@ -339,9 +339,9 @@ def test_claude_code_mode_cards_pamphlets_and_research(client, monkeypatch, caps
         def __exit__(self, *a): pass
     monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=0: FakePDF(b"%PDF-1.7 fake"))
     result = dict(RESEARCH, brochures=[
-        {"card_id": pamphlet_id, "title": "Bakery Flours 2026", "pdf_url": "https://mwf.example/flours.pdf",
+        {"card_id": str(pamphlet_id), "title": "Bakery Flours 2026", "pdf_url": "https://mwf.example/flours.pdf",
          "summary": "Full flour line with specs."},
-        {"card_id": 0, "title": "Allergen statement", "pdf_url": "https://mwf.example/allergen.pdf", "summary": ""}])
+        {"card_id": "0", "title": "Allergen statement", "pdf_url": "https://mwf.example/allergen.pdf", "summary": ""}])
     ok, res = run_tasks(capsys, "save", "research", str(sid), "-", stdin=result, monkeypatch=monkeypatch)
     pamphlet = db.get_card(pamphlet_id)
     assert pamphlet["pdf_url"] == "https://mwf.example/flours.pdf" and pamphlet["pdf_file"] == f"pamphlet-{pamphlet_id}.pdf"

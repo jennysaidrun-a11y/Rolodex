@@ -1,13 +1,37 @@
 # Supplier Rolodex
 
-The box of business cards, made searchable. Snap the front and back of a rep's card (or the pages of
-a pamphlet) on your phone. Claude reads it and researches the company, building a profile:
-what they supply, pricing, stock and lead times, locations, certifications, reviews, recalls and other
-regulatory history, and news, each with a source link. Every profile is rechecked every 3 months, and
-anything that changed (a recall, a lost certification, a closure) is flagged **Needs attention**.
+The box of business cards, made searchable. Snap a rep's business card, or the front cover of a
+pamphlet, on your phone. Claude reads it and researches the company, building a profile: what they
+supply, pricing, stock and lead times, locations, certifications, reviews, recalls and other
+regulatory history, news, and the pamphlet's PDF, each with a source link. Profiles are rechecked
+every 3 months, and anything that changed (a recall, a lost certification, a closure) is flagged
+**Needs attention**. Find suppliers by keyword, category and tags, or ask in plain English.
 
-To find a supplier, search by keyword or category, or ask in plain English ("who can supply compostable
-bread bags, SQF certified, delivering to us?") and Claude answers from what's on file.
+## The rolodex: https://claude.ai/artifact/L1xZMaHagpDhwLrykRnxF2
+
+It's a page on claude.ai. Nothing to install: open it in the browser on any computer or phone,
+signed in to Claude. (Source: `artifact/index.html`.)
+
+- **Sharing**: use the page's Share menu. People who add cards and pamphlets need **Editor**;
+  **Contributor** can edit details, add notes and tags; **Viewer** can search.
+- **+ Add**: a business card (front, and back if needed) or a pamphlet (just the cover). Take the
+  photo or pick it from your library. Claude reads it on the spot and you check the details.
+- **Research** (web lookups, the pamphlet's PDF, the 3-month rechecks) is done by Claude Code:
+  open [claude.ai/code](https://claude.ai/code), start a session on this **Rolodex** repo and type
+  **`/analyze`**. It reads anything not read yet, researches every supplier that's queued or due,
+  saves PDFs, and reports what needs attention. Run it whenever new cards come in, or at least
+  weekly. The page shows how much is waiting.
+- **Research again**: on a supplier's page, or **Select** several in the list and **Research
+  selected**; they're done on the next `/analyze`.
+- **Categories** (top menu) and **tags** filter the list: categories match any you pick, tags must
+  all match. Staff edits to categories and tags survive rechecks.
+- **Ask about your suppliers** on the page answers questions from what's on file
+  (`/find-supplier` does the same in Claude Code).
+
+## Self-hosted version (optional)
+
+The Python app below does the same job on a company server (for when there's an API key and a
+server to run it on). It isn't needed for the claude.ai page.
 
 ## What it runs on
 

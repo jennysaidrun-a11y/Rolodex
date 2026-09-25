@@ -1,0 +1,852 @@
+<title>Supplier Rolodex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Young+Serif&display=swap">
+<style>
+:root {
+  --bg: #f5f0e8; --card: #fffdf9; --ink: #2a211c; --muted: #75685e; --line: #e4d9ca;
+  --brand: #3b2f2a; --brand-ink: #fbf6ef; --accent: #a95a17; --accent-ink: #fff;
+  --soft: #f1e6d6; --warn-bg: #fdf0dc; --warn: #8a4b00; --err-bg: #fbe6e3; --err: #9b2c1c;
+  --ok-bg: #e7f1e4; --ok: #2f6b2a;
+  --display: "Young Serif", Georgia, "Times New Roman", serif;
+  --body: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #1c1714; --card: #26201c; --ink: #f2e9e0; --muted: #b4a699; --line: #3d332c;
+    --brand: #120e0c; --brand-ink: #f2e9e0; --accent: #e08a3c; --accent-ink: #1c1714;
+    --soft: #31291f; --warn-bg: #3a2b16; --warn: #f0b26a; --err-bg: #3c1f1b; --err: #f3a597;
+    --ok-bg: #1f3120; --ok: #9fd49a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1c1714; --card: #26201c; --ink: #f2e9e0; --muted: #b4a699; --line: #3d332c;
+  --brand: #120e0c; --brand-ink: #f2e9e0; --accent: #e08a3c; --accent-ink: #1c1714;
+  --soft: #31291f; --warn-bg: #3a2b16; --warn: #f0b26a; --err-bg: #3c1f1b; --err: #f3a597;
+  --ok-bg: #1f3120; --ok: #9fd49a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body); }
+a { color: var(--accent); }
+button, input, select, textarea { font: inherit; color: inherit; }
+h1, h2, h3 { font-family: var(--display); font-weight: 400; text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: 1.6rem; } h2 { font-size: 1.2rem; } h3 { font-size: 1rem; font-family: var(--body); font-weight: 700; margin-top: 12px; }
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--brand); color: var(--brand-ink);
+       display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; }
+.brand { font-family: var(--display); font-size: 1.15rem; color: var(--brand-ink); text-decoration: none; white-space: nowrap; }
+.top nav { display: flex; gap: 14px; align-items: center; }
+.top nav a { color: var(--brand-ink); text-decoration: none; white-space: nowrap; }
+main { max-width: 880px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 64px; display: grid; gap: 14px; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.muted { color: var(--muted); font-size: .92rem; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.between { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+.btn { border: 0; border-radius: 8px; padding: 10px 16px; background: var(--accent); color: var(--accent-ink); font-weight: 600;
+       cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn.small { padding: 6px 12px; font-size: .9rem; }
+.btn.big { width: 100%; justify-content: center; padding: 14px; font-size: 1.05rem; }
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.btn.danger { background: transparent; color: var(--err); border: 1px solid var(--err); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn:focus-visible, .chip:focus-within, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=text], input[type=search], input[type=email], input[type=url], input[type=tel], select, textarea {
+  width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+label.field { display: grid; gap: 4px; font-weight: 600; font-size: .92rem; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid2 .wide { grid-column: 1 / -1; }
+.notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px; }
+.error { background: var(--err-bg); color: var(--err); border-radius: 8px; padding: 10px 12px; }
+.success { background: var(--ok-bg); color: var(--ok); border-radius: 8px; padding: 10px 12px; }
+.alert { background: var(--err-bg); color: var(--err); border-radius: 8px; padding: 10px 12px;
+         display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 99px;
+        background: var(--card); font-size: .9rem; cursor: pointer; user-select: none; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
+.chip.on, .chip:has(input:checked) { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip .n { font-size: .75rem; opacity: .7; font-variant-numeric: tabular-nums; }
+.chip.dim { opacity: .55; }
+.chip.plain { cursor: default; }
+details > summary { cursor: pointer; font-weight: 600; }
+.group-name { font-size: .75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 8px 0 4px; }
+.filters { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.check { display: inline-flex; gap: 6px; align-items: center; font-size: .95rem; }
+.check input { width: 18px; height: 18px; margin: 0; }
+.cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.cat-tile { display: grid; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+            color: var(--ink); text-decoration: none; }
+.cat-tile:hover { border-color: var(--accent); }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.list li { display: flex; gap: 8px; align-items: stretch; }
+.list .item { flex: 1; min-width: 0; display: grid; gap: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+              padding: 12px 14px; color: var(--ink); text-decoration: none; }
+.list .item:hover { border-color: var(--accent); }
+.pick { display: none; align-items: center; }
+.pick input { width: 22px; height: 22px; }
+.selecting .pick { display: flex; }
+.tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 99px; font-size: .74rem; font-weight: 700;
+       background: var(--soft); color: var(--ink); vertical-align: middle; font-family: var(--body); }
+.tag.warn { background: var(--warn-bg); color: var(--warn); }
+.tag.err { background: var(--err-bg); color: var(--err); }
+.mini-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.mini { font-size: .74rem; padding: 1px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--line); }
+.scanbar { position: sticky; bottom: env(safe-area-inset-bottom, 0px); display: flex; justify-content: space-between; align-items: center;
+           gap: 10px; padding: 12px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.contact { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; }
+.contact dt { color: var(--muted); } .contact dd { margin: 0; overflow-wrap: anywhere; user-select: all; }
+.copy { margin-left: 6px; font-size: .78rem; padding: 1px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; user-select: none; }
+ul.facts { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.src { font-size: .8rem; margin-left: 4px; }
+.photos { display: flex; flex-wrap: wrap; gap: 10px; }
+.photos img { max-width: min(240px, 100%); max-height: 200px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.kind-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kind-switch label { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px; border: 1px solid var(--line);
+                     border-radius: 10px; cursor: pointer; font-weight: 600; text-align: center; }
+.kind-switch input { margin: 0; }
+.kind-switch label:has(input:checked) { border-color: var(--accent); background: var(--warn-bg); color: var(--accent); }
+.drop { display: grid; gap: 6px; padding: 14px; border: 2px dashed var(--line); border-radius: 10px; font-weight: 600; }
+.notes { list-style: none; margin: 0; padding: 0; }
+.notes li { border-top: 1px solid var(--line); padding: 8px 0; display: grid; gap: 2px; }
+.answer { white-space: pre-line; }
+.cat-row { display: grid; grid-template-columns: 1fr 2fr auto; gap: 8px; align-items: end; border-top: 1px solid var(--line); padding-top: 10px; }
+.cat-row:first-child { border-top: 0; padding-top: 0; }
+.confirm { display: grid; gap: 8px; }
+.loading { color: var(--muted); padding: 24px 0; text-align: center; }
+.show-sm { display: none; }
+@media (max-width: 560px) {
+  .grid2, .cat-row { grid-template-columns: 1fr; }
+  .filters { grid-template-columns: 1fr; }
+}
+@media (max-width: 440px) {
+  .hide-sm { display: none; } .show-sm { display: inline; }
+  .top nav { gap: 10px; font-size: .92rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<header class="top">
+  <a class="brand" href="#home"><span class="hide-sm">Supplier Rolodex</span><span class="show-sm">Suppliers</span></a>
+  <nav>
+    <a href="#home" class="hide-sm">Search</a>
+    <a href="#categories">Categories</a>
+    <a class="btn small" href="#add" id="nav-add">+ Add</a>
+  </nav>
+</header>
+<main id="app"><p class="loading">Opening the rolodex…</p></main>
+
+<script>
+(() => {
+"use strict";
+
+/* ---------- constants ---------- */
+const DEFAULT_CATEGORIES = [
+  ["Flour & grains", "Flour, grains, meals, starches"],
+  ["Sweeteners", "Sugar, syrups, honey, sugar substitutes"],
+  ["Dairy & eggs", "Milk, butter, cheese, egg products"],
+  ["Fats & oils", "Shortening, oils, margarine, release agents"],
+  ["Yeast & cultures", "Yeast, sourdough cultures, enzymes, dough conditioners"],
+  ["Other ingredients", "Seeds, inclusions, flavors, spices, fillings, toppings"],
+  ["Packaging", "Bags, film, boxes, trays, twist ties, clips"],
+  ["Labels & printing", "Labels, printed packaging, coding and date printers"],
+  ["Sanitation & chemicals", "Cleaning chemicals, CIP, sanitation tools and services"],
+  ["Pest control", "Pest management services and supplies"],
+  ["Equipment", "Mixers, ovens, dividers, slicers, conveyors, packaging machines"],
+  ["Parts & maintenance", "Spare parts, belting, bearings, repair services"],
+  ["Pallets & warehouse supplies", "Pallets, stretch wrap, racking, forklifts"],
+  ["Freight & logistics", "Trucking, LTL, cold chain, warehousing"],
+  ["Uniforms & PPE", "Uniforms, gloves, hairnets, safety gear"],
+  ["Food safety & lab testing", "Testing labs, auditors, certification bodies, consultants"],
+  ["Utilities & energy", "Gas, electric, water treatment, compressed air"],
+  ["Staffing", "Temp and permanent staffing agencies"],
+  ["IT & software", "ERP, scheduling, networks, scales and data systems"],
+  ["Other services", "Anything else"],
+].map(([name, description]) => ({ name, description }));
+const TAG_GROUPS = ["Product", "Certification", "Capability", "Service area", "Other"];
+const PLACEHOLDER = "New card";
+const RECHECK_DAYS = 90;
+
+/* ---------- state ---------- */
+const S = {
+  db: null, assets: null, sample: null, imagesOK: false, canWrite: null, ready: false, dbMissing: false,
+  suppliers: [], categoriesDoc: null,
+  filters: { q: "", cats: new Set(), tags: new Set(), attention: false },
+  selecting: false, selected: new Set(),
+  flash: null, busy: false, ask: null, confirmDelete: false,
+};
+const app = document.getElementById("app");
+
+/* ---------- helpers ---------- */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const safeUrl = u => /^https?:\/\//i.test(String(u || "").trim()) ? String(u).trim() : "";
+const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+const nowIso = () => new Date().toISOString().slice(0, 19);
+const addDays = (iso, n) => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const rid = () => Math.random().toString(36).slice(2, 10);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
+const categories = () => (S.categoriesDoc?.list?.length ? S.categoriesDoc.list : DEFAULT_CATEGORIES);
+const byId = id => S.suppliers.find(s => s.id === id);
+const low = s => String(s || "").toLowerCase();
+
+function effectiveTags(s) {
+  const removed = new Set((s.removed_tags || []).map(low));
+  const staff = s.staff_tags || [];
+  const out = new Map();
+  for (const t of [...(s.tags || []), ...staff]) {
+    const k = low(t.name);
+    if (!k || out.has(k)) continue;
+    if (removed.has(k) && !staff.includes(t)) continue;
+    out.set(k, t);
+  }
+  const rank = g => { const i = TAG_GROUPS.indexOf(g); return i < 0 ? TAG_GROUPS.length : i; };
+  return [...out.values()].sort((a, b) => rank(a.group) - rank(b.group) || low(a.name).localeCompare(low(b.name)));
+}
+const unreadDocs = s => (s.docs || []).filter(d => !d.read_at);
+const isDue = s => !["unread", "new", "researching"].includes(s.status) && s.next_check && s.next_check <= today();
+function statusTags(s) {
+  const out = [];
+  if (s.needs_attention) out.push(`<span class="tag err">Needs attention</span>`);
+  if (unreadDocs(s).length) out.push(`<span class="tag">Not read yet</span>`);
+  else if (s.status === "queued" || (isDue(s) && s.last_checked)) out.push(`<span class="tag warn">Waiting for research</span>`);
+  if (s.status === "error") out.push(`<span class="tag err">Research failed</span>`);
+  if (s.status === "closed") out.push(`<span class="tag err">Closed</span>`);
+  return out.join("");
+}
+
+function search() {
+  const f = S.filters;
+  const words = low(f.q).split(/\s+/).filter(Boolean);
+  const cats = new Set([...f.cats].map(low));
+  const tags = new Set([...f.tags].map(low));
+  return S.suppliers.filter(s => {
+    if (f.attention && !s.needs_attention) return false;
+    if (cats.size && !(s.categories || []).some(c => cats.has(low(c)))) return false;
+    const mine = new Set(effectiveTags(s).map(t => low(t.name)));
+    for (const t of tags) if (!mine.has(t)) return false;
+    if (!words.length) return true;
+    const p = s.profile || {};
+    const hay = low([s.company, s.contact_name, s.address, s.website, s.email, s.summary, (s.categories || []).join(" "),
+      effectiveTags(s).map(t => t.name).join(" "), JSON.stringify(p.products || []), JSON.stringify(p.locations || []),
+      JSON.stringify(p.certifications || []), (s.notes || []).map(n => n.text).join(" "),
+      (s.docs || []).map(d => d.title || "").join(" ")].join(" "));
+    return words.every(w => hay.includes(w));
+  }).sort((a, b) => low(a.company).localeCompare(low(b.company)));
+}
+
+function tagCounts() {
+  const counts = new Map();
+  for (const s of S.suppliers) for (const t of effectiveTags(s)) {
+    const k = t.group + "\u0000" + t.name;
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const grouped = {};
+  for (const [k, n] of counts) { const [g, name] = k.split("\u0000"); (grouped[g] ||= []).push([name, n]); }
+  for (const g in grouped) grouped[g].sort((a, b) => b[1] - a[1] || low(a[0]).localeCompare(low(b[0])));
+  return [...TAG_GROUPS, ...Object.keys(grouped).filter(g => !TAG_GROUPS.includes(g))].filter(g => grouped[g]).map(g => [g, grouped[g]]);
+}
+function catCount(name) { return S.suppliers.filter(s => (s.categories || []).some(c => low(c) === low(name))).length; }
+
+function flash(kind, text) { S.flash = { kind, text }; }
+function flashHtml() {
+  if (!S.flash) return "";
+  const f = S.flash; S.flash = null;
+  return `<p class="${f.kind === "error" ? "error" : f.kind === "ok" ? "success" : "notice"}">${esc(f.text)}</p>`;
+}
+function writeGate() {
+  return S.canWrite === false
+    ? `<p class="notice">You can look but not change anything. Ask the rolodex's owner to share it with you as a Contributor or Editor.</p>` : "";
+}
+
+/* ---------- data writes (one at a time per document) ---------- */
+const queues = new Map();
+function write(id, fn) {
+  const prev = queues.get(id) || Promise.resolve();
+  const next = prev.catch(() => {}).then(fn);
+  queues.set(id, next);
+  return next;
+}
+const supRef = id => S.db.collection("suppliers").doc(id);
+async function updateSupplier(id, patch) {
+  try { await write(id, () => supRef(id).update(patch)); return true; }
+  catch (e) { handleWriteError(e); return false; }
+}
+function handleWriteError(e) {
+  if (e?.code === "invalid_argument" && S.canWrite !== true) { S.canWrite = false; flash("error", "This change wasn't saved: you have view-only access."); }
+  else if (e?.code === "quota_exceeded") flash("error", "The rolodex is full (5,000 records). Delete some old entries first.");
+  else flash("error", "That change wasn't saved (" + (e?.code || "error") + "). Try again in a moment.");
+  render();
+}
+
+/* ---------- photos ---------- */
+async function shrink(file) {
+  // Keep storage small: an upright JPEG at most 1600 px on the long side.
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+    return blob || file;
+  } catch { return file; }
+}
+const blobUrl = id => "/_blob/" + encodeURIComponent(id);
+
+/* ---------- reading a card or pamphlet cover with Claude (in the page) ---------- */
+function cardPrompt(kind) {
+  const cats = categories().map(c => `- ${c.name}${c.description ? ": " + c.description : ""}`).join("\n");
+  const what = kind === "pamphlet"
+    ? `This photo is the front cover of a supplier's pamphlet or brochure (the full version is found online later, as a PDF). document_title: the pamphlet's title as printed, plus any edition, year or product line shown, so it can be searched for. contact_name/contact_title only if a specific rep is named. products_mentioned: products or product lines shown on the cover. other_text: anything else useful on the cover (certifications, slogans, promotions with dates).`
+    : `The photos are a business card: the first is the front, a second (if any) is the back. If there are several phone numbers, put the direct/mobile first and join them with " / ". Leave document_title empty. products_mentioned: products or services printed on the card. other_text: other useful text (taglines, certifications, handwritten notes).`;
+  return `You work for a commercial bakery that keeps a rolodex of suppliers (ingredients, packaging, sanitation, equipment, services).
+${what}
+Copy contact details exactly as printed; leave a field empty if it isn't there, never guess. Pick every category that fits what the company sells to a bakery, using only these names:
+${cats}
+
+Reply with only this JSON object:
+{"company": "", "contact_name": "", "contact_title": "", "phone": "", "email": "", "website": "", "address": "", "categories": [], "products_mentioned": [], "document_title": "", "other_text": ""}`;
+}
+function cleanReading(r) {
+  const str = v => (typeof v === "string" ? v.trim() : "");
+  const arr = v => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
+  const allowed = new Map(categories().map(c => [low(c.name), c.name]));
+  return {
+    company: str(r?.company), contact_name: str(r?.contact_name), contact_title: str(r?.contact_title),
+    phone: str(r?.phone), email: str(r?.email), website: str(r?.website), address: str(r?.address),
+    categories: arr(r?.categories).map(c => allowed.get(low(c))).filter(Boolean),
+    products_mentioned: arr(r?.products_mentioned), document_title: str(r?.document_title), other_text: str(r?.other_text),
+  };
+}
+function applyReading(s, docId, reading) {
+  // Fill blanks only; what staff or an earlier card set stays.
+  const patch = {};
+  for (const k of ["company", "contact_name", "contact_title", "phone", "email", "website", "address"]) {
+    if (reading[k] && (!s[k] || (k === "company" && s[k] === PLACEHOLDER))) patch[k] = reading[k];
+  }
+  patch.categories = [...new Set([...(s.categories || []), ...reading.categories])];
+  const doc = (s.docs || []).find(d => d.id === docId);
+  const what = doc?.kind === "pamphlet" ? "pamphlet" : "card";
+  const notes = [...(s.notes || [])];
+  if (reading.other_text) notes.push({ at: nowIso(), author: what, text: `From the ${what}: ${reading.other_text}` });
+  if (reading.products_mentioned.length) notes.push({ at: nowIso(), author: what, text: `Products in the ${what}: ${reading.products_mentioned.join(", ")}` });
+  patch.notes = notes;
+  patch.docs = (s.docs || []).map(d => d.id === docId ? { ...d, read_at: nowIso(), title: reading.document_title || d.title || "", raw: reading } : d);
+  patch.status = "queued";             // research next (a new pamphlet or card on an existing supplier refreshes it)
+  patch.next_check = today();
+  return patch;
+}
+
+/* ---------- views ---------- */
+function route() {
+  const h = location.hash.replace(/^#/, "");
+  if (h.startsWith("s-")) return { view: "supplier", id: h.slice(2) };
+  if (h.startsWith("edit-")) return { view: "edit", id: h.slice(5) };
+  if (h.startsWith("add-")) return { view: "add", id: h.slice(4) };
+  if (h === "add") return { view: "add" };
+  if (h === "categories") return { view: "categories" };
+  return { view: "home" };
+}
+
+function render() {
+  if (!S.ready) return;
+  if (S.dbMissing) {
+    app.innerHTML = `<section class="panel"><h1>Supplier Rolodex</h1><p>Open this page on claude.ai, signed in with your company account, to use the rolodex.</p></section>`;
+    return;
+  }
+  document.getElementById("nav-add").hidden = !S.assets;
+  const r = route();
+  const y = window.scrollY;
+  if (r.view === "supplier") renderSupplier(r.id);
+  else if (r.view === "edit") renderEdit(r.id);
+  else if (r.view === "add") renderAdd(r.id);
+  else if (r.view === "categories") renderCategories();
+  else renderHome();
+  if (S._keepScroll) window.scrollTo(0, y);
+  S._keepScroll = false;
+}
+
+function waitingBanner() {
+  const unread = S.suppliers.reduce((n, s) => n + unreadDocs(s).length, 0);
+  const research = S.suppliers.filter(s => !unreadDocs(s).length && (s.status === "queued" || isDue(s))).length;
+  if (!unread && !research) return "";
+  const parts = [unread && plural(unread, "card/pamphlet", "cards/pamphlets") + " to read", research && plural(research, "supplier") + " to research"].filter(Boolean);
+  return `<p class="notice">Waiting for Claude Code: ${parts.join(", ")}. Run <strong>/analyze</strong> in Claude Code (claude.ai/code, Rolodex repo) to research them.</p>`;
+}
+
+function renderHome() {
+  const f = S.filters;
+  const list = search();
+  const filtering = f.q || f.cats.size || f.tags.size || f.attention;
+  const attentionCount = S.suppliers.filter(s => s.needs_attention).length;
+  const tc = tagCounts();
+  const usedCats = categories().filter(c => catCount(c.name));
+  app.innerHTML = `
+    ${flashHtml()}${writeGate()}${waitingBanner()}
+    ${S.sample ? `<section class="panel">
+      <h2>Ask about your suppliers</h2>
+      <form id="ask-form" class="grid2">
+        <textarea id="ask-q" class="wide" rows="2" required placeholder="e.g. Who can supply compostable bread bags, SQF certified, delivering to the Midwest?">${esc(S.ask?.q || "")}</textarea>
+        <div class="wide row"><button class="btn" id="ask-btn" ${S.ask?.busy ? "disabled" : ""}>${S.ask?.busy ? "Thinking…" : "Ask Claude"}</button>
+          ${S.ask?.busy ? `<button type="button" class="btn ghost small" id="ask-stop">Stop</button>` : ""}</div>
+      </form>
+      ${S.ask?.error ? `<p class="error">${esc(S.ask.error)}</p>` : ""}
+      ${S.ask?.answer ? `<p class="answer">${esc(S.ask.answer)}</p>
+        <ul class="list">${(S.ask.matches || []).map(m => { const s = byId(m.id); return s ? `<li><a class="item" href="#s-${esc(s.id)}"><strong>${esc(s.company)}</strong><span class="muted">${esc(m.why)}</span></a></li>` : ""; }).join("")}</ul>` : ""}
+    </section>` : ""}
+    <section class="panel">
+      <form id="filter-form" class="filters">
+        <input type="search" id="q" value="${esc(f.q)}" placeholder="Keyword: company, product, city, note…" aria-label="Keyword search">
+        <label class="check"><input type="checkbox" id="attention" ${f.attention ? "checked" : ""}> Needs attention (${attentionCount})</label>
+      </form>
+      <details ${f.cats.size ? "open" : ""}><summary>Categories${f.cats.size ? ` (${f.cats.size} selected)` : ""}</summary>
+        <p class="muted">Shows suppliers in any of the categories you pick. <a href="#categories">Manage categories</a></p>
+        <div class="chips">${categories().map(c => { const n = catCount(c.name); return `<label class="chip ${n ? "" : "dim"}" title="${esc(c.description)}"><input type="checkbox" data-cat="${esc(c.name)}" ${f.cats.has(c.name) ? "checked" : ""}>${esc(c.name)} <span class="n">${n}</span></label>`; }).join("")}</div>
+      </details>
+      ${tc.length ? `<details ${f.tags.size ? "open" : ""}><summary>Tags${f.tags.size ? ` (${f.tags.size} selected)` : ""}</summary>
+        <p class="muted">Suppliers must have every tag you pick.</p>
+        ${tc.map(([g, tags]) => `<div class="group-name">${esc(g)}</div><div class="chips">${tags.map(([name, n]) => `<label class="chip"><input type="checkbox" data-tag="${esc(name)}" ${f.tags.has(name) ? "checked" : ""}>${esc(name)} <span class="n">${n}</span></label>`).join("")}</div>`).join("")}
+      </details>` : ""}
+      ${f.cats.size || f.tags.size ? `<div class="chips">${[...f.cats].map(c => `<button class="chip on" data-drop-cat="${esc(c)}">${esc(c)} ✕</button>`).join("")}${[...f.tags].map(t => `<button class="chip on" data-drop-tag="${esc(t)}">${esc(t)} ✕</button>`).join("")}<button class="chip" id="clear-filters">Clear all</button></div>` : ""}
+    </section>
+    ${!filtering && usedCats.length ? `<section class="panel"><div class="between"><h2>Browse by category</h2><a class="muted" href="#categories">Manage</a></div>
+      <div class="cat-grid">${usedCats.map(c => `<a class="cat-tile" href="#home" data-browse="${esc(c.name)}"><strong>${esc(c.name)}</strong><span class="muted">${plural(catCount(c.name), "supplier")}</span></a>`).join("")}</div></section>` : ""}
+    <div class="between"><p class="muted" style="margin:0">${list.length} of ${plural(S.suppliers.length, "supplier")}</p>
+      ${list.length && S.canWrite !== false ? `<button class="btn small ghost" id="select-toggle">${S.selecting ? "Done" : "Select"}</button>` : ""}</div>
+    ${!S.suppliers.length ? `<section class="panel"><p>No suppliers yet. ${S.assets ? `Tap <a href="#add">+ Add</a> and take a photo of the first business card.` : `Ask the owner for Editor access to add business cards.`}</p></section>` : ""}
+    <ul class="list ${S.selecting ? "selecting" : ""}">${list.map(s => {
+      const tags = effectiveTags(s);
+      const blocked = unreadDocs(s).length || s.status === "researching";
+      return `<li>
+        <label class="pick" title="${blocked ? "Not read yet" : "Select for research"}"><input type="checkbox" data-pick="${esc(s.id)}" ${S.selected.has(s.id) ? "checked" : ""} ${blocked ? "disabled" : ""}></label>
+        <a class="item" href="#s-${esc(s.id)}"><span><strong>${esc(s.company)}</strong>${statusTags(s)}</span>
+          <span class="muted">${esc((s.categories || []).join(", "))}${s.last_checked ? ` · researched ${esc(s.last_checked.slice(0, 10))}` : ""}</span>
+          ${s.summary ? `<span>${esc(s.summary)}</span>` : ""}
+          ${tags.length ? `<span class="mini-tags">${tags.slice(0, 8).map(t => `<span class="mini">${esc(t.name)}</span>`).join("")}${tags.length > 8 ? `<span class="muted">+${tags.length - 8}</span>` : ""}</span>` : ""}
+        </a></li>`; }).join("")}</ul>
+    ${S.selecting ? `<div class="scanbar"><label class="check"><input type="checkbox" id="select-all"> Select all</label>
+      <button class="btn" id="scan-selected" ${S.selected.size ? "" : "disabled"}>Research selected${S.selected.size ? ` (${S.selected.size})` : ""}</button></div>` : ""}
+  `;
+  // events
+  const q = app.querySelector("#q");
+  let t;
+  q.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { f.q = q.value; S._keepScroll = true; render(); const n = app.querySelector("#q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); });
+  app.querySelector("#filter-form").addEventListener("submit", e => e.preventDefault());
+  app.querySelector("#attention").addEventListener("change", e => { f.attention = e.target.checked; S._keepScroll = true; render(); });
+  app.querySelectorAll("[data-cat]").forEach(el => el.addEventListener("change", () => { toggle(f.cats, el.dataset.cat); S._keepScroll = true; render(); }));
+  app.querySelectorAll("[data-tag]").forEach(el => el.addEventListener("change", () => { toggle(f.tags, el.dataset.tag); S._keepScroll = true; render(); }));
+  app.querySelectorAll("[data-drop-cat]").forEach(el => el.addEventListener("click", () => { f.cats.delete(el.dataset.dropCat); render(); }));
+  app.querySelectorAll("[data-drop-tag]").forEach(el => el.addEventListener("click", () => { f.tags.delete(el.dataset.dropTag); render(); }));
+  app.querySelector("#clear-filters")?.addEventListener("click", () => { f.cats.clear(); f.tags.clear(); f.q = ""; f.attention = false; render(); });
+  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", e => { e.preventDefault(); f.cats = new Set([el.dataset.browse]); render(); }));
+  app.querySelector("#select-toggle")?.addEventListener("click", () => { S.selecting = !S.selecting; S.selected.clear(); S._keepScroll = true; render(); });
+  app.querySelectorAll("[data-pick]").forEach(el => el.addEventListener("change", () => { toggle(S.selected, el.dataset.pick); S._keepScroll = true; render(); }));
+  const all = app.querySelector("#select-all");
+  if (all) {
+    const pickable = list.filter(s => !unreadDocs(s).length && s.status !== "researching").map(s => s.id);
+    all.checked = pickable.length > 0 && pickable.every(id => S.selected.has(id));
+    all.addEventListener("change", () => { S.selected = new Set(all.checked ? pickable : []); S._keepScroll = true; render(); });
+  }
+  app.querySelector("#scan-selected")?.addEventListener("click", async () => {
+    const ids = [...S.selected];
+    for (const id of ids) await updateSupplier(id, { status: "queued", next_check: today() });
+    S.selecting = false; S.selected.clear();
+    flash("ok", `${plural(ids.length, "supplier")} queued for research. Run /analyze in Claude Code to research them.`);
+    render();
+  });
+  app.querySelector("#ask-form")?.addEventListener("submit", e => { e.preventDefault(); ask(app.querySelector("#ask-q").value.trim()); });
+  app.querySelector("#ask-stop")?.addEventListener("click", () => S.ask?.ctl?.abort());
+}
+const toggle = (set, v) => (set.has(v) ? set.delete(v) : set.add(v));
+
+async function ask(question) {
+  if (!question || !S.sample) return;
+  const ctl = new AbortController();
+  S.ask = { q: question, busy: true, ctl };
+  render();
+  const directory = S.suppliers.map(s => {
+    const p = s.profile || {};
+    return { id: s.id, company: s.company, status: s.status, categories: s.categories || [], tags: effectiveTags(s).map(t => t.name),
+      contact: [s.contact_name, s.phone, s.email].filter(Boolean).join(" "), address: s.address, summary: s.summary,
+      products: (p.products || []).map(x => x.name), service_area: p.service_area || "", locations: (p.locations || []).map(x => x.address),
+      certifications: (p.certifications || []).map(x => `${x.name} (${x.status})`), minimum_order: p.minimum_order || "",
+      regulatory: (p.regulatory || []).map(x => `${x.date} ${x.kind}: ${x.description}`), attention: s.needs_attention ? s.attention_note : "",
+      last_researched: s.last_checked || "never", notes: (s.notes || []).slice(-5).map(n => n.text) };
+  });
+  const prompt = `You help a commercial bakery pick suppliers from its rolodex. Answer using only the supplier directory below. Recommend the suppliers that fit best, one sentence each on why, and mention anything that argues against one (a recall, a lapsed certification, out of area, not researched yet). If nothing on file fits, say so plainly and suggest what kind of supplier to look for. Keep the answer short.
+
+Question: ${question}
+
+Supplier directory (JSON):
+${JSON.stringify(directory).slice(0, 55000)}
+
+Reply with only this JSON: {"answer": "your short answer", "matches": [{"id": "supplier id", "why": "one sentence"}]}`;
+  try {
+    const out = await S.sample.json(prompt, { signal: ctl.signal, cache: false });
+    S.ask = { q: question, answer: String(out?.answer || ""), matches: Array.isArray(out?.matches) ? out.matches.map(m => ({ id: String(m?.id || ""), why: String(m?.why || "") })) : [] };
+  } catch (e) {
+    const msg = { cancelled: "", not_granted: "Asking Claude needs your permission; reload the page to be asked again.", rate_limited: "Too many questions at once. Wait a moment and ask again.", prompt_too_large: "The rolodex is too big to send in one question. Use the filters to narrow it down." }[e?.code];
+    S.ask = { q: question, error: msg ?? "Claude couldn't answer that just now. Try again, or use the filters." };
+    if (e?.code === "cancelled") S.ask.error = "";
+  }
+  render();
+}
+
+function renderSupplier(id) {
+  const s = byId(id);
+  if (!s) { app.innerHTML = `<section class="panel"><p>That supplier isn't in the rolodex (it may have been deleted). <a href="#home">Back to search</a></p></section>`; return; }
+  const p = s.profile || {};
+  const tags = effectiveTags(s);
+  const unread = unreadDocs(s);
+  const src = u => safeUrl(u) ? ` <a class="src" href="${esc(safeUrl(u))}" target="_blank" rel="noopener">source</a>` : "";
+  const copyable = (label, v) => v ? `<dt>${label}</dt><dd><span class="val">${esc(v)}</span><button class="copy" data-copy="${esc(v)}">Copy</button></dd>` : "";
+  const site = safeUrl(s.website) || (s.website ? safeUrl("https://" + s.website) : "");
+  const pamphletPdfs = (p.brochures || []).filter(b => b.card_id && b.card_id !== 0 && b.card_id !== "0");
+  const otherPdfs = (p.brochures || []).filter(b => (!b.card_id || b.card_id === 0 || b.card_id === "0") && safeUrl(b.pdf_url));
+  const canResearch = S.canWrite !== false && !unread.length && s.status !== "researching";
+  app.innerHTML = `
+    ${flashHtml()}
+    <p><a href="#home">← All suppliers</a></p>
+    <section class="panel">
+      <div class="between"><div><h1>${esc(s.company)}</h1>
+        <p class="muted" style="margin:4px 0 0">${(s.categories || []).map(c => `<a href="#home" data-browse="${esc(c)}">${esc(c)}</a>`).join(" · ")}</p></div>
+        ${S.canWrite !== false ? `<a class="btn small ghost" href="#edit-${esc(s.id)}">Edit</a>` : ""}</div>
+      ${tags.length ? `<div class="chips">${tags.map(t => `<button class="chip" data-tagfilter="${esc(t.name)}" title="${esc(t.group)}: show every supplier with this tag">${esc(t.name)}</button>`).join("")}</div>` : ""}
+      ${unread.length ? `<p class="notice">${plural(unread.length, "photo")} not read yet. Claude Code reads ${unread.length > 1 ? "them" : "it"} and researches the company on the next <strong>/analyze</strong> run${S.canWrite !== false ? `; you can <a href="#edit-${esc(s.id)}">type details in</a> now` : ""}.</p>`
+        : s.status === "queued" || (isDue(s) && s.last_checked) ? `<p class="notice">Waiting for research. It runs the next time someone runs <strong>/analyze</strong> in Claude Code.</p>`
+        : s.status === "researching" ? `<p class="notice">Claude Code is researching this supplier right now.</p>` : ""}
+      ${s.status === "error" ? `<p class="error">The last research attempt failed: ${esc(s.research_error)} It will be tried again on the next /analyze run.</p>` : ""}
+      ${s.needs_attention ? `<div class="alert"><span><strong>Needs attention:</strong> ${esc(s.attention_note)}</span>${S.canWrite !== false ? `<button class="btn small" id="reviewed">Mark as reviewed</button>` : ""}</div>` : ""}
+      <dl class="contact">
+        ${s.contact_name ? `<dt>Contact</dt><dd>${esc(s.contact_name)}${s.contact_title ? ", " + esc(s.contact_title) : ""}</dd>` : ""}
+        ${copyable("Phone", s.phone)}${copyable("Email", s.email)}
+        ${s.website ? `<dt>Website</dt><dd>${site ? `<a href="${esc(site)}" target="_blank" rel="noopener">${esc(s.website)}</a>` : esc(s.website)}</dd>` : ""}
+        ${copyable("Address", s.address)}
+      </dl>
+      ${s.summary ? `<p style="margin:0">${esc(s.summary)}</p>` : ""}
+      <div class="between"><span class="muted">${s.last_checked ? `Researched ${esc(s.last_checked.slice(0, 10))} · next check ${esc(s.next_check || "")}` : "Not researched yet"}</span>
+        ${canResearch ? `<button class="btn small ghost" id="research-now" ${s.status === "queued" ? "disabled" : ""}>${s.status === "queued" ? "Queued for research" : "Research again"}</button>` : ""}</div>
+    </section>
+    ${p.changes_since_last_check?.length ? `<section class="panel"><h2>Changed since the last check</h2><ul class="facts">${p.changes_since_last_check.map(c => `<li>${esc(c)}</li>`).join("")}</ul></section>` : ""}
+    ${s.last_checked ? `
+    <section class="panel"><h2>Products &amp; services</h2>
+      ${p.products?.length ? `<ul class="facts">${p.products.map(x => `<li><strong>${esc(x.name)}</strong>${x.details ? ": " + esc(x.details) : ""}</li>`).join("")}</ul>` : `<p class="muted">Nothing found.</p>`}
+      <h3>Pricing</h3>
+      ${p.pricing?.length ? `<ul class="facts">${p.pricing.map(x => `<li>${esc(x.item)}: ${esc(x.price)}${src(x.source)}</li>`).join("")}</ul>` : `<p class="muted" style="margin:0">No published pricing. Ask the rep for a quote.</p>`}
+      ${p.stock_and_lead_times ? `<h3>Stock &amp; lead times</h3><p style="margin:0">${esc(p.stock_and_lead_times)}</p>` : ""}
+      ${p.minimum_order ? `<h3>Minimum order</h3><p style="margin:0">${esc(p.minimum_order)}</p>` : ""}
+    </section>
+    <section class="panel"><h2>Locations</h2>
+      ${p.locations?.length ? `<ul class="facts">${p.locations.map(x => `<li>${esc(x.kind)}: ${esc(x.address)}</li>`).join("")}</ul>` : ""}
+      ${p.service_area ? `<p style="margin:0"><strong>Serves:</strong> ${esc(p.service_area)}</p>` : ""}
+      ${!p.locations?.length && !p.service_area ? `<p class="muted" style="margin:0">Nothing found.</p>` : ""}
+    </section>
+    <section class="panel"><h2>Certifications</h2>
+      ${p.certifications?.length ? `<ul class="facts">${p.certifications.map(x => `<li>${esc(x.name)}: ${esc(x.status)}${src(x.source)}</li>`).join("")}</ul>` : `<p class="muted" style="margin:0">None found.</p>`}
+    </section>
+    <section class="panel"><h2>Regulatory</h2>
+      ${p.regulatory?.length ? `<ul class="facts">${p.regulatory.map(x => `<li><strong>${esc(x.date)} ${esc(x.kind)}</strong>: ${esc(x.description)}${src(x.source)}</li>`).join("")}</ul>` : `<p class="muted" style="margin:0">No recalls, warning letters or enforcement actions found.</p>`}
+    </section>
+    <section class="panel"><h2>Reviews &amp; reputation</h2>
+      <p style="margin:0">${esc(p.reviews?.summary || "Nothing found.")}${(p.reviews?.sources || []).map(src).join("")}</p>
+      ${p.news?.length ? `<h3>News</h3><ul class="facts">${p.news.map(x => `<li>${esc(x.date)}: ${esc(x.headline)}${src(x.source)}</li>`).join("")}</ul>` : ""}
+    </section>
+    ${pamphletPdfs.length || otherPdfs.length ? `<section class="panel"><h2>Brochures &amp; documents</h2><ul class="facts">
+      ${pamphletPdfs.filter(b => b.summary).map(b => `<li><strong>${esc(b.title)}</strong>: ${esc(b.summary)}</li>`).join("")}
+      ${otherPdfs.map(b => `<li><a href="${esc(safeUrl(b.pdf_url))}" target="_blank" rel="noopener">${esc(b.title || "PDF")}</a>${b.summary ? ": " + esc(b.summary) : ""}</li>`).join("")}
+    </ul></section>` : ""}
+    ${p.sources?.filter(safeUrl).length ? `<section class="panel"><details><summary>Sources (${p.sources.filter(safeUrl).length})</summary><ul class="facts" style="margin-top:8px">${p.sources.filter(safeUrl).map(u => `<li style="overflow-wrap:anywhere"><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></li>`).join("")}</ul></details></section>` : ""}
+    ` : ""}
+    <section class="panel"><h2>Notes</h2>
+      ${S.canWrite !== false ? `<form id="note-form" class="grid2">
+        <textarea id="note-text" class="wide" rows="2" required placeholder="Who stopped by, what they offered, quotes, samples…"></textarea>
+        <input type="text" id="note-author" placeholder="Your name">
+        <button class="btn small">Add note</button></form>` : ""}
+      <ul class="notes">${[...(s.notes || [])].reverse().map(n => `<li><span class="muted">${esc((n.at || "").slice(0, 10))}${n.author ? " · " + esc(n.author) : ""}</span>${esc(n.text)}</li>`).join("") || `<li class="muted">No notes yet.</li>`}</ul>
+    </section>
+    <section class="panel"><div class="between"><h2>Cards &amp; pamphlets</h2>${S.assets ? `<a class="btn small ghost" href="#add-${esc(s.id)}">+ Add</a>` : ""}</div>
+      ${[...(s.docs || [])].reverse().map(d => `<div style="display:grid;gap:6px">
+        <p class="muted" style="margin:0">${d.kind === "pamphlet" ? `Pamphlet${d.title ? `: <strong>${esc(d.title)}</strong>` : ""}` : "Business card"} · added ${esc((d.added_at || "").slice(0, 10))}${d.read_at ? "" : " · <strong>not read yet</strong>"}</p>
+        ${d.kind === "pamphlet" && d.read_at ? `<div class="row">${d.pdf_asset ? `<a class="btn small" href="${esc(blobUrl(d.pdf_asset))}" target="_blank">Open PDF</a>` : ""}
+          ${safeUrl(d.pdf_url) ? `<a href="${esc(safeUrl(d.pdf_url))}" target="_blank" rel="noopener">${d.pdf_asset ? "Original link" : "PDF online"}</a>` : ""}
+          ${!d.pdf_url ? `<span class="muted">PDF version not found yet; it's looked for when the supplier is researched.</span>` : ""}</div>` : ""}
+        <div class="photos">${(d.photos || []).map((ph, i) => `<a href="${esc(blobUrl(ph))}" target="_blank"><img src="${esc(blobUrl(ph))}" alt="${d.kind === "pamphlet" ? "Pamphlet cover" : i ? "Back of card" : "Front of card"}" loading="lazy"></a>`).join("")}</div>
+      </div>`).join("") || `<p class="muted" style="margin:0">No photos.</p>`}
+    </section>
+    ${s.checks?.length ? `<section class="panel"><h2>Research history</h2><ul class="facts">${[...s.checks].reverse().map(c => `<li>${esc((c.at || "").slice(0, 10))}${c.changes ? ": " + esc(c.changes) : ""}</li>`).join("")}</ul></section>` : ""}
+  `;
+  app.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; }
+    catch { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent = "Selected"; }
+  }));
+  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", () => { S.filters.cats = new Set([el.dataset.browse]); S.filters.tags.clear(); S.filters.q = ""; }));
+  app.querySelectorAll("[data-tagfilter]").forEach(el => el.addEventListener("click", () => { S.filters = { q: "", cats: new Set(), tags: new Set([el.dataset.tagfilter]), attention: false }; location.hash = "home"; }));
+  app.querySelector("#reviewed")?.addEventListener("click", () => updateSupplier(s.id, { needs_attention: false }));
+  app.querySelector("#research-now")?.addEventListener("click", async () => {
+    if (await updateSupplier(s.id, { status: "queued", next_check: today() })) flash("ok", "Queued. Run /analyze in Claude Code to research it.");
+  });
+  app.querySelector("#note-form")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const text = app.querySelector("#note-text").value.trim();
+    if (!text) return;
+    await updateSupplier(s.id, { notes: [...(s.notes || []), { at: nowIso(), author: app.querySelector("#note-author").value.trim(), text }] });
+  });
+}
+
+function renderEdit(id) {
+  const s = byId(id);
+  if (!s) { app.innerHTML = `<section class="panel"><p>That supplier isn't in the rolodex. <a href="#home">Back to search</a></p></section>`; return; }
+  const tags = effectiveTags(s);
+  const allCats = [...new Set([...categories().map(c => c.name), ...(s.categories || [])])];
+  const field = (key, label, type = "text", wide = false) => `<label class="field ${wide ? "wide" : ""}">${label}<input type="${type}" id="f-${key}" value="${esc(s[key] || "")}"></label>`;
+  app.innerHTML = `
+    ${flashHtml()}${writeGate()}
+    <p><a href="#s-${esc(s.id)}">← Back to ${esc(s.company)}</a></p>
+    <section class="panel">
+      <h1>Edit ${esc(s.company)}</h1>
+      <form id="edit-form" class="grid2">
+        ${field("company", "Company")}${field("contact_name", "Contact name")}${field("contact_title", "Title")}
+        ${field("phone", "Phone", "tel")}${field("email", "Email", "email")}${field("website", "Website")}${field("address", "Address", "text", true)}
+        <fieldset class="wide" style="border:1px solid var(--line);border-radius:10px;display:grid;gap:8px"><legend><strong>Categories</strong></legend>
+          <div class="chips">${allCats.map(c => `<label class="chip"><input type="checkbox" name="cat" value="${esc(c)}" ${(s.categories || []).includes(c) ? "checked" : ""}>${esc(c)}</label>`).join("")}</div>
+          <label class="field">New category <span class="muted">(comma separated; added to the category list)</span><input type="text" id="f-newcats"></label>
+        </fieldset>
+        <fieldset class="wide" style="border:1px solid var(--line);border-radius:10px;display:grid;gap:8px"><legend><strong>Tags</strong></legend>
+          ${tags.length ? `<p class="muted" style="margin:0">Untick a tag to remove it; it stays removed when the supplier is researched again.</p>
+          <div class="chips">${tags.map(t => `<label class="chip"><input type="checkbox" name="keep" value="${esc(t.name)}" checked>${esc(t.name)} <span class="n">${esc(t.group)}</span></label>`).join("")}</div>`
+          : `<p class="muted" style="margin:0">Tags are added when the supplier is researched. You can add your own now.</p>`}
+          <div class="grid2"><label class="field">Add tags <span class="muted">(comma separated)</span><input type="text" id="f-newtags" placeholder="e.g. Sample Received, Preferred"></label>
+          <label class="field">Group<select id="f-taggroup">${TAG_GROUPS.map(g => `<option ${g === "Other" ? "selected" : ""}>${g}</option>`).join("")}</select></label></div>
+        </fieldset>
+        <button class="btn big wide" ${S.canWrite === false ? "disabled" : ""}>Save</button>
+      </form>
+    </section>
+    <section class="panel">
+      ${S.confirmDelete ? `<div class="confirm"><p class="error">Delete ${esc(s.company)}, its notes, research and photos? This can't be undone.</p>
+        <div class="row"><button class="btn danger" id="del-yes">Yes, delete it</button><button class="btn ghost" id="del-no">Keep it</button></div></div>`
+      : `<div><button class="btn small danger" id="del" ${S.canWrite === false ? "disabled" : ""}>Delete this supplier</button></div>`}
+    </section>`;
+  app.querySelector("#edit-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const val = k => app.querySelector("#f-" + k).value.trim();
+    const newCats = val("newcats").split(",").map(x => x.trim()).filter(Boolean);
+    for (const c of newCats) await addCategory(c, "");
+    const canon = new Map(categories().map(c => [low(c.name), c.name]));
+    const cats = [...new Set([...[...app.querySelectorAll("input[name=cat]:checked")].map(i => i.value), ...newCats.map(c => canon.get(low(c)) || c)])];
+    const kept = new Set([...app.querySelectorAll("input[name=keep]:checked")].map(i => low(i.value)));
+    const vocab = new Map(S.suppliers.flatMap(x => [...(x.tags || []), ...(x.staff_tags || [])]).map(t => [low(t.name), t]));
+    const group = app.querySelector("#f-taggroup").value;
+    const added = [...new Map(val("newtags").split(",").map(n => n.trim().slice(0, 40)).filter(Boolean)
+      .map(n => [low(n), vocab.get(low(n)) || { group, name: n }])).values()];
+    const addedNames = new Set(added.map(t => low(t.name)));
+    const removed = new Set([...(s.removed_tags || []).map(low), ...(s.tags || []).map(t => low(t.name)).filter(n => !kept.has(n))]);
+    addedNames.forEach(n => removed.delete(n));
+    const staff = (s.staff_tags || []).filter(t => kept.has(low(t.name)) && !addedNames.has(low(t.name)));
+    const ok = await updateSupplier(s.id, {
+      company: val("company") || "Unknown company", contact_name: val("contact_name"), contact_title: val("contact_title"),
+      phone: val("phone"), email: val("email"), website: val("website"), address: val("address"),
+      categories: cats, staff_tags: [...staff, ...added], removed_tags: [...removed],
+    });
+    if (ok) { flash("ok", "Saved."); location.hash = "s-" + s.id; }
+  });
+  app.querySelector("#del")?.addEventListener("click", () => { S.confirmDelete = true; render(); });
+  app.querySelector("#del-no")?.addEventListener("click", () => { S.confirmDelete = false; render(); });
+  app.querySelector("#del-yes")?.addEventListener("click", async () => {
+    S.confirmDelete = false;
+    try {
+      await write(s.id, () => supRef(s.id).delete());
+      if (S.assets) for (const d of s.docs || []) for (const a of [...(d.photos || []), d.pdf_asset].filter(Boolean)) { try { await S.assets.delete(a); } catch {} }
+      flash("ok", `${s.company} deleted.`); location.hash = "home";
+    } catch (e) { handleWriteError(e); }
+  });
+}
+
+function renderAdd(existingId) {
+  const existing = existingId ? byId(existingId) : null;
+  if (!S.assets) {
+    app.innerHTML = `<section class="panel"><h1>Add a supplier</h1><p>Adding photos needs Editor access to this page. Ask its owner to share it with you as an Editor.</p><p><a href="#home">Back to search</a></p></section>`;
+    return;
+  }
+  app.innerHTML = `
+    ${flashHtml()}
+    <section class="panel" style="max-width:520px;width:100%;justify-self:center">
+      <h1>${existing ? "Add to " + esc(existing.company) : "Add a supplier"}</h1>
+      <form id="add-form" style="display:grid;gap:12px">
+        <div class="kind-switch" role="radiogroup" aria-label="What are you adding?">
+          <label><input type="radio" name="kind" value="card" checked> Business card</label>
+          <label><input type="radio" name="kind" value="pamphlet"> Pamphlet / brochure</label>
+        </div>
+        <label class="drop"><span data-k="card">Front of card</span><span data-k="pamphlet" hidden>Front cover of the pamphlet</span>
+          <input type="file" id="front" accept="image/*" required></label>
+        <label class="drop" data-k="card">Back of card <span class="muted">(if it has anything on it)</span>
+          <input type="file" id="back" accept="image/*"></label>
+        <p class="muted" data-k="pamphlet" hidden style="margin:0">Just the cover. Claude finds the full PDF version online (usually on the supplier's website) and keeps a copy with the supplier.</p>
+        <button class="btn big" id="add-btn" ${S.busy ? "disabled" : ""}>${S.busy ? esc(S.busy) : "Save"}</button>
+      </form>
+      <p class="muted" style="margin:0">Take a photo or pick one from your library. ${S.imagesOK ? "Claude reads it right away; the web research happens the next time someone runs /analyze in Claude Code." : "Claude Code reads it and researches the company the next time someone runs /analyze."}</p>
+    </section>`;
+  const form = app.querySelector("#add-form");
+  const show = () => {
+    const kind = form.querySelector("input[name=kind]:checked").value;
+    form.querySelectorAll("[data-k]").forEach(el => { el.hidden = el.dataset.k !== kind; });
+  };
+  form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
+  show();
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (S.busy) return;
+    const kind = form.querySelector("input[name=kind]:checked").value;
+    const files = [form.querySelector("#front").files[0], kind === "card" ? form.querySelector("#back").files[0] : null].filter(Boolean);
+    if (!files.length) return;
+    await addPhotos(kind, files, existing);
+  });
+}
+
+async function addPhotos(kind, files, existing) {
+  S.busy = "Uploading…"; render();
+  let blobs = [], ids = [];
+  try {
+    blobs = await Promise.all(files.map(shrink));
+    for (const b of blobs) ids.push((await S.assets.upload(b, { type: "image/jpeg" })).id);
+  } catch (e) {
+    S.busy = false;
+    flash("error", { too_large: "That photo is too large. Try a smaller one.", unsupported_type: "That file isn't a photo the rolodex can store. Use a JPEG or PNG.", quota_or_state: "The rolodex's photo storage is full." }[e?.code] || "The photo didn't upload. Check your connection and try again.");
+    render(); return;
+  }
+  const doc = { id: rid(), kind, photos: ids, added_at: nowIso(), read_at: null, title: "", pdf_url: "", pdf_asset: "" };
+  let id = existing?.id;
+  try {
+    if (existing) {
+      await write(id, () => supRef(id).update({ docs: [...(existing.docs || []), doc] }));
+    } else {
+      const ref = S.db.collection("suppliers").doc();
+      id = ref.id;
+      await write(id, () => ref.set({
+        company: PLACEHOLDER, contact_name: "", contact_title: "", phone: "", email: "", website: "", address: "",
+        categories: [], summary: "", profile: {}, status: "unread", needs_attention: false, attention_note: "", research_error: "",
+        tags: [], staff_tags: [], removed_tags: [], notes: [], checks: [], docs: [doc],
+        created_at: nowIso(), last_checked: "", next_check: "",
+      }));
+    }
+  } catch (e) { S.busy = false; handleWriteError(e); return; }
+
+  if (S.sample && S.imagesOK) {
+    S.busy = "Claude is reading it…"; render();
+    try {
+      const reading = cleanReading(await S.sample.json(cardPrompt(kind), { images: blobs, cache: false }));
+      const fresh = byId(id) || { ...(existing || {}), id, company: PLACEHOLDER, docs: [...(existing?.docs || []), doc], notes: existing?.notes || [], categories: existing?.categories || [] };
+      await write(id, () => supRef(id).update(applyReading(fresh, doc.id, reading)));
+      flash("ok", existing ? "Added and read. Check the details below; the research runs on the next /analyze." : "Card read. Check the details, then Save. The research runs on the next /analyze.");
+      S.busy = false;
+      location.hash = existing ? "s-" + id : "edit-" + id;
+      render(); return;
+    } catch (e) {
+      if (e?.code !== "not_granted" && e?.code !== "cancelled") console.warn("card read failed", e);
+      flash("notice", "Saved. Claude couldn't read it here, so Claude Code will read it on the next /analyze run. You can type the details in now.");
+    }
+  } else {
+    flash("ok", "Saved. Claude Code reads it and researches the company on the next /analyze run.");
+  }
+  S.busy = false;
+  location.hash = "s-" + id;
+  render();
+}
+
+/* ---------- categories ---------- */
+async function saveCategories(list) {
+  try { await write("__categories", () => S.db.doc("config/categories").set({ list })); return true; }
+  catch (e) { handleWriteError(e); return false; }
+}
+async function addCategory(name, description) {
+  name = name.replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!name || categories().some(c => low(c.name) === low(name))) return;
+  await saveCategories([...categories(), { name, description: description.trim() }]);
+}
+async function replaceCategoryOnSuppliers(oldName, newName) {
+  for (const s of S.suppliers) {
+    if (!(s.categories || []).some(c => low(c) === low(oldName))) continue;
+    const cats = [...new Set((s.categories || []).map(c => (low(c) === low(oldName) ? newName : c)).filter(Boolean))];
+    await updateSupplier(s.id, { categories: cats });
+  }
+}
+function renderCategories() {
+  const list = categories();
+  app.innerHTML = `
+    ${flashHtml()}${writeGate()}
+    <section class="panel"><h1>Categories</h1>
+      <p class="muted" style="margin:0">The kinds of supplier the rolodex is sorted into. Claude picks from this list when it reads a card and researches a supplier, using the description to decide what belongs where. Renaming a category renames it on every supplier; renaming it to an existing category merges the two.</p></section>
+    ${S.canWrite !== false ? `<section class="panel"><h2>Add a category</h2>
+      <form id="cat-add" class="cat-row"><label class="field">Name<input type="text" id="cat-name" required placeholder="e.g. Nuts & seeds"></label>
+        <label class="field">Description<input type="text" id="cat-desc" placeholder="What belongs here"></label><button class="btn">Add</button></form></section>` : ""}
+    <section class="panel"><h2>${plural(list.length, "category", "categories")}</h2>
+      ${list.map((c, i) => `<form class="cat-row" data-i="${i}">
+        <label class="field">Name · <a href="#home" data-browse="${esc(c.name)}" class="muted">${plural(catCount(c.name), "supplier")}</a><input type="text" name="name" value="${esc(c.name)}" required></label>
+        <label class="field">Description<input type="text" name="description" value="${esc(c.description || "")}"></label>
+        ${S.canWrite !== false ? `<div class="row"><button class="btn small">Save</button>
+          <button type="button" class="btn small ghost" data-move="-1" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
+          <button type="button" class="btn small ghost" data-move="1" ${i === list.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
+          ${S.confirmDelete === "cat" + i ? `<button type="button" class="btn small danger" data-del-yes>Delete${catCount(c.name) ? ` from ${plural(catCount(c.name), "supplier")}` : ""}</button><button type="button" class="btn small ghost" data-del-no>Keep</button>`
+            : `<button type="button" class="btn small danger" data-del>Delete</button>`}</div>` : ""}
+      </form>`).join("")}
+    </section>`;
+  app.querySelector("#cat-add")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    await addCategory(app.querySelector("#cat-name").value, app.querySelector("#cat-desc").value);
+    flash("ok", "Category added."); render();
+  });
+  app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", () => { S.filters.cats = new Set([el.dataset.browse]); }));
+  app.querySelectorAll("form.cat-row[data-i]").forEach(form => {
+    const i = +form.dataset.i, c = list[i];
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      const name = form.name.value.replace(/\s+/g, " ").trim().slice(0, 60) || c.name;
+      const description = form.description.value.trim();
+      const clash = list.find((x, j) => j !== i && low(x.name) === low(name));
+      const next = clash ? list.filter((_, j) => j !== i) : list.map((x, j) => (j === i ? { name, description } : x));
+      if (!(await saveCategories(next))) return;
+      if (name !== c.name) await replaceCategoryOnSuppliers(c.name, clash ? clash.name : name);
+      flash("ok", clash ? `Merged into ${clash.name}.` : "Saved."); render();
+    });
+    form.querySelectorAll("[data-move]").forEach(b => b.addEventListener("click", async () => {
+      const j = i + +b.dataset.move, next = [...list];
+      [next[i], next[j]] = [next[j], next[i]];
+      S._keepScroll = true; await saveCategories(next);
+    }));
+    form.querySelector("[data-del]")?.addEventListener("click", () => { S.confirmDelete = "cat" + i; S._keepScroll = true; render(); });
+    form.querySelector("[data-del-no]")?.addEventListener("click", () => { S.confirmDelete = false; S._keepScroll = true; render(); });
+    form.querySelector("[data-del-yes]")?.addEventListener("click", async () => {
+      S.confirmDelete = false;
+      if (await saveCategories(list.filter((_, j) => j !== i))) await replaceCategoryOnSuppliers(c.name, null);
+      flash("ok", `${c.name} deleted.`); render();
+    });
+  });
+}
+
+/* ---------- start ---------- */
+window.addEventListener("hashchange", () => { S.confirmDelete = false; window.scrollTo(0, 0); render(); });
+
+(async () => {
+  const claude = window.claude;
+  if (!claude?.use) { S.ready = true; S.dbMissing = true; render(); return; }
+  const [db, user] = await Promise.all([claude.use("db"), claude.use("user")]);
+  S.db = db;
+  if (!db) { S.ready = true; S.dbMissing = true; render(); return; }
+  try { S.canWrite = user ? await user.can("data.write") : null; } catch { S.canWrite = null; }
+  let first = 2;
+  const settle = () => { if (--first <= 0 && !S.ready) { S.ready = true; } render(); };
+  db.collection("suppliers").onSnapshot(snap => {
+    S.suppliers = snap.docs.filter(d => d.exists).map(d => ({ id: d.id, ...d.data() }));
+    S._keepScroll = true; settle();
+  }, e => { flash("error", "Lost the connection to the rolodex (" + e.code + "). Reload the page."); S.ready = true; render(); });
+  db.doc("config/categories").onSnapshot(snap => { S.categoriesDoc = snap.exists ? snap.data() : null; S._keepScroll = true; settle(); },
+    () => settle());
+  claude.use("assets").then(a => { S.assets = a; S._keepScroll = true; render(); });
+  claude.use("sample").then(async sm => {
+    S.sample = sm;
+    if (sm) { try { S.imagesOK = !!(await sm.limits())?.images; } catch { S.imagesOK = false; } }
+    S._keepScroll = true; render();
+  });
+})();
+})();
+</script>

@@ -79,9 +79,9 @@ def download_pdf(url: str, name: str) -> str:
 
 def _save_brochures(supplier_id: int, brochures: list[dict]) -> None:
     """Link each pamphlet to the PDF research found for it, and keep our own copy of it."""
-    pamphlets = {c["id"]: c for c in db.pamphlets_for(supplier_id)}
+    pamphlets = {str(c["id"]): c for c in db.pamphlets_for(supplier_id)}
     for b in brochures:
-        card = pamphlets.get(b.get("card_id"))
+        card = pamphlets.get(str(b.get("card_id")))
         if card and b.get("pdf_url") and b["pdf_url"] != card["pdf_url"]:
             db.set_card_pdf(card["id"], b["pdf_url"], download_pdf(b["pdf_url"], f"pamphlet-{card['id']}.pdf"))
 

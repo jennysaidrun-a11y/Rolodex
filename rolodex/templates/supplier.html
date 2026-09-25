@@ -88,8 +88,8 @@
   <ul>{% for x in p.news %}<li>{{ x.date }}: {{ x.headline }}{{ src(x.source) }}</li>{% endfor %}</ul>{% endif %}
 </section>
 
-{% set other_pdfs = (p.brochures or [])|selectattr("card_id", "equalto", 0)|selectattr("pdf_url")|list %}
-{% set pamphlet_pdfs = (p.brochures or [])|rejectattr("card_id", "equalto", 0)|selectattr("summary")|list %}
+{% set other_pdfs = (p.brochures or [])|selectattr("card_id", "in", ["0", 0])|selectattr("pdf_url")|list %}
+{% set pamphlet_pdfs = (p.brochures or [])|rejectattr("card_id", "in", ["0", 0])|selectattr("summary")|list %}
 {% if other_pdfs or pamphlet_pdfs %}
 <section class="card"><h2>Brochures &amp; documents</h2>
   <ul>

@@ -6,7 +6,10 @@ import base64
 import json
 from pathlib import Path
 
-import anthropic
+try:   # only needed for the API mode; the Claude Code tools use this module's prompts without it
+    import anthropic
+except ImportError:
+    anthropic = None
 
 from . import config
 from .db import TAG_GROUPS
@@ -27,6 +30,8 @@ _client: anthropic.Anthropic | None = None
 
 def client() -> anthropic.Anthropic:
     global _client
+    if anthropic is None:
+        raise ClaudeError("The anthropic package isn't installed (pip install anthropic).")
     if _client is None:
         _client = anthropic.Anthropic()
     return _client
@@ -94,7 +99,7 @@ def research_schema(categories: list[dict]) -> dict:
         "attention_reason": STR,
         "sources": STR_LIST,
         "brochures": {"type": "array", "items": _schema({
-            "card_id": {"type": "integer"}, "title": STR, "pdf_url": STR, "summary": STR})},
+            "card_id": STR, "title": STR, "pdf_url": STR, "summary": STR})},
         "tags": {"type": "array", "items": _schema({"group": {"type": "string", "enum": TAG_GROUPS}, "name": STR})},
     })
 
@@ -110,8 +115,9 @@ def _create(**kwargs):
     extra = {}
     if model in _FALLBACK_MODELS:
         extra = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+    api = client()
     try:
-        return client().beta.messages.create(model=model, **extra, **kwargs)
+        return api.beta.messages.create(model=model, **extra, **kwargs)
     except anthropic.AuthenticationError as e:
         raise ClaudeError("The Anthropic API key is missing or wrong (set ANTHROPIC_API_KEY).") from e
     except anthropic.RateLimitError as e:
@@ -224,7 +230,7 @@ def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | N
            "the PDF file (pdf_url empty if you can't find it), plus a 1-2 sentence summary.\n"
            if pamphlets else "")
         + "brochures: also list other useful PDFs you find (catalogs, spec sheets, allergen or "
-        "certification documents) with card_id 0. Only direct links to PDF files.\n"
+        "certification documents) with card_id \"0\". Only direct links to PDF files.\n"
         "changes_since_last_check: short bullets of what differs from the last check (empty on the first "
         "check). Set needs_attention for anything the bakery should look at: a recall or warning letter, a "
         "lost certification, a closure or acquisition, or a website/phone that no longer works. "
