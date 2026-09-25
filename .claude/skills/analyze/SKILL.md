@@ -94,8 +94,13 @@ leave out discontinued ones. Never save a copy with fewer photos than before for
       "products": [{"id": "item # or slug", "section_id": "...", "name": "...", "sku": "", "details": "", "price": "",
       "page_url": "...", "image_url": "...", "images": []}]}`
      and save it: `python -m rolodex.tasks save catalog <id> work/catalog-<id>.json`.
-   - Products saved without a photo: `python -m rolodex.catalog photos <id>` looks for each one's
-     photo on its own page (skipping the site's generic images).
+   - Every save then opens each entry's page by itself (`python -m rolodex.catalog complete <id>`,
+     also run after the automatic copy): a category page that shows several models (a grid of cards
+     with a title, photo and link, like an "AEDs" page listing each AED) becomes a section holding
+     each model with its photo, and products still without a photo get one from their own page
+     (lazy-loaded pictures included, and a product-family photo the page labels with the product's
+     name). So list categories as you find them; you don't have to open every one by hand. Check the
+     `models` and `photos` counts it prints and look again at anything it couldn't fill.
    - A supplier with no product list at all (a service company, say) gets a catalog of its services
      the same way, from its services pages.
 

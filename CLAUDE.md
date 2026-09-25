@@ -28,8 +28,11 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
 - **Catalogs**: `catalog_sections` / `catalog_products` tables, replaced whole by `db.save_catalog`.
   Photos are stored as URLs on the supplier's site and served through `/img` (`rolodex/images.py`:
   public hosts only, cached in `data/cache/img`, resized). `rolodex/catalog.py` crawls Shopify,
-  WooCommerce and sitemap + JSON-LD/microdata sites, and `photos <id>` fills missing photos from
-  product pages; anything else Claude builds by hand per the skill.
+  WooCommerce and sitemap + JSON-LD/microdata sites; anything else Claude builds by hand per the skill.
+  After every save `catalog.complete` runs: `expand` opens each entry's page and turns category pages
+  with a grid of model cards into a section of those models (`rolodex/pagecards.py`, stdlib HTML
+  parsing, skips menus/footers/related/resources grids), then `fill_photos` fills missing photos.
+  Tests keep it offline with `ROLODEX_CATALOG_COMPLETE=0` (tests/conftest.py).
 - **Data**: `data/rolodex.db` (live, not in git) is copied to `data/rolodex-backup.db` and committed
   with `data/cards/` and `data/docs/` by `rolodex/gitsync.py` (every few minutes in a Codespace).
   `db.init()` restores from the backup on a fresh checkout. Don't commit `data/rolodex.db` or `data/cache/`.
