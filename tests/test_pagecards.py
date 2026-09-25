@@ -67,3 +67,52 @@ def test_expand_turns_a_category_entry_into_its_models(client, monkeypatch):  # 
     assert all(p["image_url"] for p in products)
     sections = {s["name"]: s for s in db.catalog_sections(sid)}
     assert sections["AEDs"]["parent_id"] == "fa" and sections["AEDs"]["count"] == 3
+
+
+PRODUCT = """<html><body class="nav-dropdown-has-arrow"><header class="site-header"><a href="/x.pdf">Menu PDF</a></header>
+<main><div class="product-main"><h1>Bread Bag 8x4x18</h1><p>Clear poly bread bag for sliced loaves, 1.25 mil.</p>
+<p><strong>CH100</strong> – Bread Bag 8 x 4 x 18 in – case of 1000</p></div>
+<div class="product-footer"><div class="woocommerce-Tabs-panel" id="tab-description"><p>Food-safe LDPE.</p>
+<a href="/files/bread-bag-datasheet.pdf">View Datasheet</a></div>
+<table class="shop_attributes"><tr><th>Material</th><td>LDPE</td></tr><tr><th>Case count</th><td>1000</td></tr></table>
+<dl><dt>Thickness</dt><dd>1.25 mil</dd></dl><ul><li>Color: Clear</li><li>Phone: 555-1212</li></ul></div></main>
+<footer class="footer"><p>Address: 1 Main St</p></footer></body></html>"""
+
+
+def test_product_specs_from_its_page():
+    r = pagecards.product_specs("https://bags.example/p/bread-bag", PRODUCT)
+    specs = dict(r["specs"])
+    assert specs["Material"] == "LDPE" and specs["Case count"] == "1000" and specs["Thickness"] == "1.25 mil"
+    assert specs["Color"] == "Clear" and "Phone" not in specs and "Address" not in specs
+    assert r["files"] == [{"name": "View Datasheet", "url": "https://bags.example/files/bread-bag-datasheet.pdf"}]
+    # text in reading order (the item code before the words after it), the tabs below included
+    assert "CH100 – Bread Bag 8 x 4 x 18 in – case of 1000" in r["description"] and "Food-safe LDPE." in r["description"]
+
+
+def test_complete_adds_specs_and_english(client, monkeypatch):  # noqa: F811
+    sid = new_supplier()
+    db.save_catalog(sid, {"source": "https://bags.example", "sections": [],
+                          "products": [{"id": "bb", "name": "Bread Bag", "page_url": "https://bags.example/p/bread-bag",
+                                        "image_url": "https://bags.example/i.jpg", "price": ""}]})
+    monkeypatch.setattr(catalog.Site, "get", lambda self, url, check_robots=True, limit=0:
+                        PRODUCT.encode() if url.endswith("/p/bread-bag") else b"")
+    monkeypatch.setattr(catalog, "DELAY", 0)
+    res = catalog.complete(sid, minutes=1)
+    assert res["specs"]["improved"] == 1
+    p = db.catalog_products(sid, None, "", 10)[0][0]
+    assert ["Material", "LDPE"] in p["specs"] and p["files"][0]["url"].endswith("datasheet.pdf")
+    assert db.catalog_products(sid, None, "LDPE", 10)[1] == 1   # keyword search sees the specs
+    page = client.get(f"/supplier/{sid}/catalog/item/bb").text
+    assert "Specifications" in page and "Case count" in page and "bread-bag-datasheet.pdf" in page
+
+
+def test_english_version_of_a_site_is_preferred(monkeypatch):
+    pages = {"https://tape.example/": '<html lang="es-AR"><head><link rel="alternate" hreflang="en-US" '
+                                      'href="https://tape.example/en/"></head><body>Cintas adhesivas</body></html>',
+             "https://tape.example/en/": '<html lang="en-US"><body>Adhesive tapes</body></html>'}
+    monkeypatch.setattr(catalog.Site, "get", lambda self, url, check_robots=True, limit=0: pages.get(url, "").encode())
+    monkeypatch.setattr(catalog, "DELAY", 0)
+    site = catalog.Site("https://tape.example", 1)
+    catalog.english_root(site)
+    assert site.root == "https://tape.example/en" and site.language == "en-us"
+    assert site.json("/wp-json/x") is None   # asked for under /en

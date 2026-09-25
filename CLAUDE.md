@@ -33,7 +33,11 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
   WooCommerce and sitemap + JSON-LD/microdata sites; anything else Claude builds by hand per the skill.
   After every save `catalog.complete` runs: `expand` opens each entry's page and turns category pages
   with a grid of model cards into a section of those models (`rolodex/pagecards.py`, stdlib HTML
-  parsing, skips menus/footers/related/resources grids), then `fill_photos` fills missing photos.
+  parsing, skips menus/footers/related/resources grids), `fill_photos` fills missing photos, and
+  `fill_specs` reads each product's own page for specs/dimensions (`specs`, `[[label, value]]`),
+  datasheet links (`files`) and the full description. Catalogs are copied in English: `crawl` uses a
+  site's English version (`english_root`: `<html lang>`, hreflang, `/en/`), and the skill translates
+  sites that have none.
   Tests keep it offline with `ROLODEX_CATALOG_COMPLETE=0` (tests/conftest.py).
 - **Data**: `data/rolodex.db` (live, not in git) is copied to `data/rolodex-backup.db` and committed
   with `data/cards/` and `data/docs/` by `rolodex/gitsync.py` (every few minutes in a Codespace).

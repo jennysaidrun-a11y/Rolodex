@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS catalog_products (
     image_url TEXT DEFAULT '',          -- main photo on their site (shown through /img, cached)
     images TEXT DEFAULT '[]',           -- JSON list of further photo URLs
     position INTEGER DEFAULT 0,
+    specs TEXT DEFAULT '[]',            -- JSON [[label, value]]: dimensions, material, pack size... from their page
+    files TEXT DEFAULT '[]',            -- JSON [{name, url}]: datasheets, spec sheets, SDS
     PRIMARY KEY (supplier_id, id)
 );
 CREATE INDEX IF NOT EXISTS catalog_products_section ON catalog_products (supplier_id, section_id, position);
@@ -133,6 +135,7 @@ TAG_GROUPS = ["Product", "Certification", "Capability", "Service area", "Other"]
 _ADDED_COLUMNS = {
     "suppliers": {"tags": "TEXT DEFAULT '[]'", "staff_tags": "TEXT DEFAULT '[]'", "removed_tags": "TEXT DEFAULT '[]'",
                   "progress": "TEXT DEFAULT ''", "catalog": "TEXT DEFAULT '{}'"},
+    "catalog_products": {"specs": "TEXT DEFAULT '[]'", "files": "TEXT DEFAULT '[]'"},
     "cards": {"pages": "TEXT DEFAULT '[]'", "kind": "TEXT DEFAULT 'card'", "read_at": "TEXT",
               "title": "TEXT DEFAULT ''", "pdf_url": "TEXT DEFAULT ''", "pdf_file": "TEXT DEFAULT ''"},
 }
@@ -571,10 +574,12 @@ def save_catalog(supplier_id: int, catalog: dict) -> dict:
                          str(p["name"])[:300], str(p.get("sku", ""))[:100], str(p.get("details", ""))[:300],
                          str(p.get("description", ""))[:4000], str(p.get("price", ""))[:100],
                          str(p.get("page_url", "")), str(p.get("image_url", "")),
-                         json.dumps([u for u in p.get("images", []) if isinstance(u, str)][:12]), len(products)))
+                         json.dumps([u for u in p.get("images", []) if isinstance(u, str)][:12]), len(products),
+                         json.dumps(_specs(p.get("specs"))), json.dumps(_files(p.get("files")))))
     summary = {"crawled_at": now(), "source": catalog.get("source", ""), "total": len(products),
                "with_photos": sum(1 for p in products if p[9]), "sections": len(sections),
-               "note": catalog.get("note", ""), "method": catalog.get("platform") or "by hand"}
+               "note": catalog.get("note", ""), "method": catalog.get("platform") or "by hand",
+               "language": catalog.get("language", "")}
     with connect() as conn:
         conn.execute("DELETE FROM catalog_sections WHERE supplier_id = ?", (supplier_id,))
         conn.execute("DELETE FROM catalog_products WHERE supplier_id = ?", (supplier_id,))
@@ -582,9 +587,37 @@ def save_catalog(supplier_id: int, catalog: dict) -> dict:
                          [(supplier_id, str(x["id"]), str(x["name"])[:200],
                            str(x.get("parent_id") or "") if str(x.get("parent_id") or "") in known else "", i)
                           for i, x in enumerate(sections)])
-        conn.executemany("INSERT INTO catalog_products VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", products)
+        conn.executemany("INSERT INTO catalog_products (supplier_id, id, section_id, name, sku, details, description, "
+                         "price, page_url, image_url, images, position, specs, files) "
+                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", products)
     update_supplier(supplier_id, catalog=summary)
     return summary
+
+
+def _specs(value) -> list[list[str]]:
+    """[[label, value]] pairs, from a list of pairs or a {label: value} dict."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    if isinstance(value, dict):
+        value = list(value.items())
+    out = []
+    for x in value or []:
+        if isinstance(x, (list, tuple)) and len(x) == 2 and str(x[0]).strip() and str(x[1]).strip():
+            out.append([str(x[0]).strip()[:80], str(x[1]).strip()[:300]])
+    return out[:60]
+
+
+def _files(value) -> list[dict]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return [{"name": str(f.get("name") or f["url"])[:120], "url": f["url"]} for f in value or []
+            if isinstance(f, dict) and str(f.get("url", "")).startswith(("http://", "https://"))][:8]
 
 
 def catalog_sections(supplier_id: int) -> list[dict]:
@@ -617,6 +650,8 @@ def section_and_below(sections: list[dict], section_id: str) -> list[str]:
 def _product(row: sqlite3.Row) -> dict:
     p = dict(row)
     p["images"] = json.loads(p.get("images") or "[]")
+    p["specs"] = _specs(p.get("specs") or "[]")
+    p["files"] = _files(p.get("files") or "[]")
     return p
 
 
@@ -633,7 +668,7 @@ def catalog_products(supplier_id: int | None = None, section_ids: list[str] | No
         args += section_ids
     for w in re.split(r"\s+", q.strip())[:8]:
         if w:
-            where.append("(p.name || ' ' || p.sku || ' ' || p.details || ' ' || p.description) LIKE ?")
+            where.append("(p.name || ' ' || p.sku || ' ' || p.details || ' ' || p.description || ' ' || p.specs) LIKE ?")
             args.append(f"%{w}%")
     sql_where = " WHERE " + " AND ".join(where) if where else ""
     order = "s.position, p.position" if supplier_id is not None else "sup.company COLLATE NOCASE, s.position, p.position"

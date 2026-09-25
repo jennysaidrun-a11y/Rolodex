@@ -225,3 +225,10 @@ pre.log { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; back
 .tab.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .tab .n { font-size: .78em; opacity: .75; font-variant-numeric: tabular-nums; }
 @media (min-width: 760px) { .tabs { flex-wrap: wrap; overflow: visible; } }
+
+/* Product specs and datasheets */
+.specs { width: 100%; border-collapse: collapse; font-size: .92rem; margin: 4px 0 12px; }
+.specs th, .specs td { text-align: left; vertical-align: top; padding: 7px 10px; border-top: 1px solid var(--line); }
+.specs th { width: 38%; font-weight: 600; color: var(--muted); }
+.specs tr:nth-child(odd) { background: var(--bg); }
+.files { padding-left: 18px; margin: 4px 0 14px; } .files li { margin: 4px 0; overflow-wrap: anywhere; }

@@ -346,7 +346,7 @@ PRODUCT_ANSWER_SCHEMA = _schema({
 
 PRODUCT_INSTRUCTIONS = (
     "You help a commercial bakery's staff find products in their suppliers' catalogs. Every product on "
-    "file is in the catalog list (JSON; key, supplier, section, name, item number, price, details). "
+    "file is in the catalog list (JSON; key, supplier, section, name, item number, price, details, specs). "
     "Answer the request using only that list: pick the products that fit best (up to 24, best first), "
     "one short sentence each on why, and use each product's key exactly as given. Understand what they "
     "need, not just their words (\"something to wrap pallets\" is stretch film). If nothing fits, say so "
@@ -365,6 +365,9 @@ def product_list(products: list[dict]) -> str:
         text = " ".join((p.get("details") or p.get("description") or "").split())
         if text:
             row["details"] = text[:160]
+        specs = "; ".join(f"{a}: {b}" for a, b in (p.get("specs") or [])[:8])
+        if specs:
+            row["specs"] = specs[:240]
         rows.append(row)
     return json.dumps(rows, separators=(",", ":"), ensure_ascii=False)
 
