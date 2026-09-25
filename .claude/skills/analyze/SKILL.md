@@ -65,8 +65,10 @@ item number, listed price and a link to the product page. Copy their organizatio
 not their design.
 
 On a recheck, `list` shows how the last copy was made (`catalog`). Copy it again the same way:
-automatically if that worked before, otherwise go through their site again and save the complete
-updated list (products still there, new ones added, discontinued ones left out).
+automatically if that worked before; if it was made by hand, start from the current copy
+(`python -m rolodex.tasks show catalog <id> > work/catalog-<id>.json`), go through their site again
+and save the complete updated list: keep the products still there with their photos, add new ones,
+leave out discontinued ones. Never save a copy with fewer photos than before for the same products.
 
 1. Try the automatic copy first: `python -m rolodex.catalog <id>` (or `python -m rolodex.catalog <id> <site url>`
    when the products are on a different site than the one on file). It reads Shopify and WooCommerce
@@ -78,7 +80,13 @@ updated list (products still there, new ones added, discontinued ones left out).
      their order). Use `curl -sL -A "Mozilla/5.0"` for the HTML (WebFetch drops image URLs).
    - Each product (or product line, when the site lists lines rather than single items): name,
      item number, one short details line (size, pack, material), listed price with unit ("" if not
-     shown), page_url, image_url (its own photo, found as in step 1), images (more photos, optional).
+     shown), page_url, image_url, images (more photos, optional).
+   - Photos: every product should have one if the site shows one. Use the product's own photo when
+     there is one; when the site only has a photo per product line or category (common on sites
+     without an online store), use the photo it shows next to that product or line. Look at all the
+     `<img>` tags on the page (`src`, `data-src`, `srcset`) and CSS `background-image` URLs, not just
+     og:image. Skip only logos, icons, people/contact banners, and one image repeated across unrelated
+     products.
    - Include every product the site lists; give it up to about 20 minutes and say what's missing in
      `note` if you stop early. Wait about half a second between requests; skip what robots.txt disallows.
    - Write `work/catalog-<id>.json`:

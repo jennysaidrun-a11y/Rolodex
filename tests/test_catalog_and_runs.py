@@ -147,7 +147,10 @@ def test_analyze_now_runs_claude_code_with_progress(client, tmp_path, monkeypatc
 import json, subprocess, sys, time
 run = lambda *a: subprocess.run([sys.executable, "-m", "rolodex.tasks", *a], check=True, capture_output=True)
 run("begin"); run("current", "{sid}"); run("progress", "{sid}", "2", "6", "Pricing")
-time.sleep(1.5)
+import os
+end = time.time() + 20
+while not os.path.exists("go") and time.time() < end:   # the test checks the progress bar, then says go
+    time.sleep(0.1)
 open("research.json", "w").write({json.dumps(json.dumps(RESEARCH))})
 run("save", "research", "{sid}", "research.json")
 open("catalog.json", "w").write({json.dumps(json.dumps(CATALOG))})
@@ -163,6 +166,7 @@ run("finish", "Researched 1 supplier.")
     p = client.get("/analysis").json()
     assert p["state"] == "running" and p["total"] == 1 and 0 < p["percent"] < 100 and p["steps"][0]["label"] == "Pricing"
     assert 'id="runbar" data-state="running"' in client.get("/").text
+    (tmp_path / "go").touch()
     assert wait_for(lambda: client.get("/analysis").json()["state"] == "done")
     p = client.get("/analysis").json()
     assert p["done"] == 1 and p["summary"] == "Researched 1 supplier."

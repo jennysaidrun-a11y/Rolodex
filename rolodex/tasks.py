@@ -3,6 +3,7 @@
     python -m rolodex.tasks list                   what's waiting: cards/pamphlets to read, suppliers to research
     python -m rolodex.tasks show card <id>         photos, instructions and output schema for one card/pamphlet
     python -m rolodex.tasks show research <id>     instructions and output schema for one supplier
+    python -m rolodex.tasks show catalog <id>      the supplier's current catalog copy, as JSON (same shape as save)
     python -m rolodex.tasks save card <id> FILE    save a reading (JSON file, or - for stdin)
     python -m rolodex.tasks save research <id> FILE
     python -m rolodex.tasks fail <supplier id> MESSAGE
@@ -98,8 +99,19 @@ def cmd_show(kind: str, item_id: int) -> None:
               "instructions": claude.CONTEXT + "\n\n"
               + claude.research_prompt(s, notes, db.tag_vocabulary(), categories, db.pamphlets_for(item_id)),
               "output_schema": claude.research_schema(categories)})
+    elif kind == "catalog":
+        s = db.get_supplier(item_id)
+        if s is None:
+            sys.exit(f"No supplier {item_id}.")
+        sections = db.catalog_sections(item_id)
+        products = db.catalog_products(item_id, None, "", 100000)[0]
+        _out({"source": s["catalog"].get("source", ""), "note": s["catalog"].get("note", ""),
+              "copied": s["catalog"].get("crawled_at", ""), "method": s["catalog"].get("method", ""),
+              "sections": [{k: x[k] for k in ("id", "name", "parent_id")} for x in sections],
+              "products": [{k: p[k] for k in ("id", "section_id", "name", "sku", "details", "description", "price",
+                                              "page_url", "image_url", "images")} for p in products]})
     else:
-        sys.exit("show card <id> | show research <id>")
+        sys.exit("show card <id> | show research <id> | show catalog <id>")
 
 
 def _read_json(source: str) -> dict:
