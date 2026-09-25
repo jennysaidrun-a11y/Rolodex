@@ -184,7 +184,7 @@ const S = {
   suppliers: [], categoriesDoc: null,
   filters: { q: "", cats: new Set(), tags: new Set(), attention: false },
   selecting: false, selected: new Set(),
-  flash: null, busy: false, ask: null, confirmDelete: false,
+  reading: new Set(), flash: null, busy: false, ask: null, confirmDelete: false,
 };
 const app = document.getElementById("app");
 
@@ -394,6 +394,8 @@ function route() {
 
 function render() {
   if (!S.ready) return;
+  // Never redraw the Add screen under someone who has picked a photo: it would clear their pick.
+  if (S.addDirty && route().view === "add" && !S.busy) return;
   if (S.dbMissing) {
     app.innerHTML = `<section class="panel"><h1>Supplier Rolodex</h1><p>Open this page on claude.ai, signed in with your company account, to use the rolodex.</p></section>`;
     return;
@@ -688,7 +690,8 @@ function renderSupplier(id) {
         <p class="muted" style="margin:4px 0 0">${(s.categories || []).map(c => `<a href="#home" data-browse="${esc(c)}">${esc(c)}</a>`).join(" · ")}</p></div>
         ${S.canWrite !== false ? `<a class="btn small ghost" href="#edit-${esc(s.id)}">Edit</a>` : ""}</div>
       ${tags.length ? `<div class="chips">${tags.map(t => `<button class="chip" data-tagfilter="${esc(t.name)}" title="${esc(t.group)}: show every supplier with this tag">${esc(t.name)}</button>`).join("")}</div>` : ""}
-      ${unread.length ? `<p class="notice">${plural(unread.length, "photo")} not read yet. The analysis reads ${unread.length > 1 ? "them" : "it"} and researches the company${S.canWrite !== false ? `; you can <a href="#edit-${esc(s.id)}">type details in</a> now` : ""}.</p>`
+      ${unread.some(d => S.reading.has(d.id)) ? `<p class="notice">Claude is reading the photo now; the details fill in here in a moment.</p>`
+        : unread.length ? `<p class="notice">${plural(unread.length, "photo")} not read yet. The analysis reads ${unread.length > 1 ? "them" : "it"} and researches the company${S.canWrite !== false ? `; you can <a href="#edit-${esc(s.id)}">type details in</a> now` : ""}.</p>`
         : s.status === "queued" || (isDue(s) && s.last_checked) ? ""
         : s.status === "researching" ? `<p class="notice">Claude Code is researching this supplier right now.</p>` : ""}
       ${s.status === "error" ? `<p class="error">The last research attempt failed: ${esc(s.research_error)} It will be tried again on the next analysis.</p>` : ""}
@@ -921,10 +924,12 @@ function renderAdd(existingId) {
     form.querySelectorAll("[data-k]").forEach(el => { el.hidden = el.dataset.k !== kind; });
   };
   form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
+  form.querySelectorAll("input[type=file]").forEach(inp => inp.addEventListener("change", () => { S.addDirty = [...form.querySelectorAll("input[type=file]")].some(i => i.files.length); }));
   show();
   form.addEventListener("submit", async e => {
     e.preventDefault();
     if (S.busy) return;
+    S.addDirty = false;
     const kind = form.querySelector("input[name=kind]:checked").value;
     const files = [form.querySelector("#front").files[0], kind === "card" ? form.querySelector("#back").files[0] : null].filter(Boolean);
     if (!files.length) return;
@@ -960,25 +965,34 @@ async function addPhotos(kind, files, existing) {
     }
   } catch (e) { S.busy = false; handleWriteError(e); return; }
 
-  if (S.sample && S.imagesOK) {
-    S.busy = "Claude is reading it…"; render();
-    try {
-      const reading = cleanReading(await S.sample.json(cardPrompt(kind), { images: blobs, cache: false }));
-      const fresh = byId(id) || { ...(existing || {}), id, company: PLACEHOLDER, docs: [...(existing?.docs || []), doc], notes: existing?.notes || [], categories: existing?.categories || [] };
-      await write(id, () => supRef(id).update(applyReading(fresh, doc.id, reading)));
-      flash("ok", existing ? "Added and read. Add more, or tap \"Done adding: analyze now\" to research." : "Card read. Check the details and Save. When you've added everything, tap \"Done adding: analyze now\".");
-      S.busy = false;
-      if (existing) finishTo("s-" + id); else navigate("edit-" + id, false);
-      render(); return;
-    } catch (e) {
-      if (e?.code !== "not_granted" && e?.code !== "cancelled") console.warn("card read failed", e);
-      flash("notice", "Saved. Claude couldn't read it here, so the analysis will read it. You can type the details in now.");
-    }
-  } else {
-    flash("ok", "Saved. Add more, or tap \"Done adding: analyze now\" when you're finished.");
-  }
+  // Saved. Show it right away; Claude reads the photo in the background.
   S.busy = false;
+  const reading = S.sample && S.imagesOK;
+  flash("ok", reading ? "Saved ✓ Claude is reading it now; the details fill in below in a moment. Add more, or tap \"Done adding: analyze now\" when you're finished."
+                      : "Saved ✓ Add more, or tap \"Done adding: analyze now\" when you're finished.");
   if (existing) finishTo("s-" + id); else navigate("s-" + id, false);
+  if (reading) readInBackground(id, doc.id, kind, blobs);
+}
+
+async function readInBackground(id, docId, kind, blobs) {
+  S.reading.add(docId); S._keepScroll = true; render();
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 90000);   // don't hang: the analysis reads it otherwise
+  try {
+    const reading = cleanReading(await S.sample.json(cardPrompt(kind), { images: blobs, cache: false, modelTier: "quick", signal: ctl.signal }));
+    const fresh = byId(id);
+    if (fresh && (fresh.docs || []).some(d => d.id === docId && !d.read_at)) {
+      await write(id, () => supRef(id).update(applyReading(fresh, docId, reading)));
+      flash("ok", `Read: ${reading.company || "card"}. Check the details, and tap Edit to fix anything.`);
+    }
+  } catch (e) {
+    flash("notice", e?.code === "not_granted"
+      ? "Saved. You didn't allow Claude to read photos on this page, so the analysis will read it."
+      : "Saved. Claude couldn't read it quickly here, so the analysis will read it. You can type the details in with Edit.");
+  } finally {
+    clearTimeout(timer);
+    S.reading.delete(docId); S._keepScroll = true; render();
+  }
 }
 
 /* ---------- categories ---------- */
@@ -1058,6 +1072,7 @@ function renderCategories() {
 /* ---------- start ---------- */
 setInterval(() => { if (analysisProgress() && !document.hidden && !S.confirmDelete && !document.activeElement?.matches("input, textarea, select")) { S._keepScroll = true; render(); } }, 30000);
 window.addEventListener("hashchange", () => {
+  S.addDirty = false;
   if (!skipPush && lastState && lastState.hash !== hashNow()) { trail.push(lastState); if (trail.length > 100) trail.shift(); }
   skipPush = false;
   S.confirmDelete = false; window.scrollTo(0, 0); render();
