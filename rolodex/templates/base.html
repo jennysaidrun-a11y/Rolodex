@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Supplier Rolodex{% endblock %}</title>
+  <title>{% block title %}Supplier Rolodex{% endblock %} · United Bakery</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap">
@@ -12,7 +12,7 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" href="/static/icon.svg">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <meta name="theme-color" content="#4a2c17">
+  <meta name="theme-color" content="#43270b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Suppliers">
 </head>
@@ -20,9 +20,9 @@
   <header class="top">
     {% set path = request.url.path %}
     <a class="brand" href="/">
-      {% include "_wheat.svg" %}
-      <span class="brand-text"><span class="brand-eyebrow">{{ bakery_name or "Bakehouse" }}</span>
-        <span class="brand-name"><span class="hide-sm">Supplier Rolodex</span><span class="show-sm">Suppliers</span></span></span>
+      <span class="badge">{% include "_wheat.svg" %}</span>
+      <span class="brand-text"><span class="wordmark">United<i>Bakery</i></span>
+        <span class="brand-name">Supplier Rolodex</span></span>
     </a>
     <nav><a class="hide-sm{% if path == '/' or path.startswith('/supplier') %} on{% endif %}" href="/">Suppliers</a><a class="{% if path.startswith('/products') %}on{% endif %}" href="/products">Products</a><a class="hide-sm{% if path.startswith('/categories') %} on{% endif %}" href="/categories">Categories</a><a class="btn small" href="/add">+ Add<span class="hide-sm"> card</span></a></nav>
   </header>

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import product_card, pager, back %}
-{% block title %}{{ current.name ~ " · " if current }}{{ s.company }} catalog{% endblock %}
+{% block title %}{{ current.name ~ " · " if current }}{{ s.company }} catalog · Supplier Rolodex{% endblock %}
 {% block wide %}wide{% endblock %}
 {% macro tree(parent, depth) %}
   {% for x in sections if x.parent_id == parent %}

@@ -47,8 +47,6 @@ ANALYSIS = os.environ.get("ANALYSIS") or ("api" if os.environ.get("ANTHROPIC_API
 USE_API = ANALYSIS == "api"
 
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5")
-# The bakery's name, shown above "Supplier Rolodex" in the header (optional).
-BAKERY_NAME = os.environ.get("BAKERY_NAME", "")
 # Ask Claude and "Search every catalog" answers: Sonnet is quick and plenty for finding things.
 SEARCH_MODEL = os.environ.get("SEARCH_MODEL", "claude-sonnet-5")
 RECHECK_DAYS = int(os.environ.get("RECHECK_DAYS", "90"))

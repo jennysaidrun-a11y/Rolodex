@@ -1,11 +1,11 @@
 /* Bakery theme, shared by the bakery's apps (File Filler, Resumes, Supplier Rolodex).
-   Tokens copied from the project's bakery-theme/theme.md (starter palette, 2026-09-25): change them
+   Tokens copied from the project's bakery-theme/theme.md (United Bakery branding, 2026-09-25): change them
    there and in every app together. Loaded after style.css; only colour, type, surfaces and chrome. */
 :root{
-  --crust:#4a2c17;      /* title bar, primary buttons, headings accent */
-  --crust-2:#6b4226;    /* hover on crust */
-  --oven:#c8752b;       /* accent: links hover, focus ring, active tab line */
-  --wheat:#e8c77e;      /* on-dark text/marks, highlights */
+  --crust:#43270b;      /* United Bakery brown (their site): title bar, primary buttons, headings */
+  --crust-2:#5e3a17;    /* hover on crust */
+  --oven:#c8911f;       /* logo gold (the oval): badge, focus ring, active tab line */
+  --wheat:#ecd29a;      /* pale wheat from the logo: on-dark text/marks, highlights */
   --flour:#faf6ef;      /* page background */
   --dough:#fffdf8;      /* cards, panes */
   --proof:#f3ebdf;      /* subtle fills: table heads, hover rows, side bar */
@@ -17,7 +17,7 @@
   --bad:#b83a2e;        /* missing, errors */
   --uniq:#6e4bb8;
   --radius:12px;
-  --shadow:0 1px 2px rgba(74,44,23,.06),0 4px 14px rgba(74,44,23,.06);
+  --shadow:0 1px 2px rgba(67,39,11,.06),0 4px 14px rgba(67,39,11,.07);
   --shadow-hover:0 2px 4px rgba(74,44,23,.08),0 10px 24px rgba(74,44,23,.10);
   --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --font-head:"Fraunces",Georgia,"Times New Roman",serif;
@@ -25,11 +25,11 @@
 
   /* the rolodex's own names, mapped onto the theme */
   --bg:var(--flour); --card:var(--dough); --brand:var(--crust); --accent:var(--crust);
-  --link:#8a4f1c; --warn-bg:#fbecd6; --warn-text:#8a4b0f; --err-bg:#fbe6e2; --err:var(--bad);
+  --link:#7a4a12; --warn-bg:#fbecd6; --warn-text:#8a4b0f; --err-bg:#fbe6e2; --err:var(--bad);
 }
 @media (prefers-color-scheme: dark){
   :root{ --flour:#17110d; --dough:#221913; --proof:#2c2119; --line:#3a2c22; --ink:#f3eadf; --muted:#bba997;
-         --crust:#4a2c17; --accent:#c8752b; --link:#e0a060; --warn-bg:#3a2915; --warn-text:#f0b870;
+         --crust:#43270b; --accent:#c8911f; --link:#e0a060; --warn-bg:#3a2915; --warn-text:#f0b870;
          --err-bg:#3b1d19; --err:#f3a497; --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-hover:0 4px 16px rgba(0,0,0,.4); }
 }
 
@@ -49,12 +49,15 @@ a:hover{ color:var(--oven); }
       box-shadow:0 3px 0 0 transparent; position:sticky; }
 .top::after{ content:""; position:absolute; left:0; right:0; bottom:-3px; height:3px;
              background:linear-gradient(90deg,var(--oven),var(--wheat)); }
-.brand{ display:flex; align-items:center; gap:9px; color:var(--wheat) !important; }
-.brand-mark{ width:24px; height:24px; flex:none; color:var(--wheat); }
-.brand-text{ display:flex; align-items:baseline; gap:8px; line-height:1.1; }
-.brand-eyebrow{ font-family:var(--font-head); font-weight:700; font-size:1.1rem; color:var(--wheat); }
-.brand-name{ font-family:var(--font); font-weight:500; font-size:.95rem; color:#f3e3c2; padding-left:8px;
-             border-left:1px solid rgba(232,199,126,.4); }
+.brand{ display:flex; align-items:center; gap:10px; color:var(--wheat) !important; }
+.badge{ width:34px; height:26px; border-radius:50%; background:var(--oven); box-shadow:0 0 0 2px #1f1206,0 0 0 3px var(--oven);
+        display:grid; place-items:center; color:var(--crust); flex:none; margin-left:3px; }
+.brand-mark{ width:18px; height:18px; }
+.brand-text{ display:flex; align-items:center; gap:10px; line-height:1; }
+.wordmark{ font:700 16px/1 var(--font-head); letter-spacing:.06em; text-transform:uppercase; color:var(--wheat); white-space:nowrap; }
+.wordmark i{ font:italic 600 16px/1 var(--font-head); letter-spacing:0; text-transform:none; color:#f3e6cc; margin-left:5px; }
+.brand-name{ font-family:var(--font); font-weight:600; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase;
+             color:#f3e6cc; padding-left:10px; border-left:1px solid rgba(236,210,154,.4); }
 .top nav{ gap:4px; }
 .top nav a:not(.btn){ color:#f3e3c2; padding:6px 10px; border-radius:8px; font-size:.95rem; }
 .top nav a:not(.btn):hover{ background:rgba(255,255,255,.08); color:#fff; }
@@ -87,7 +90,7 @@ a:hover{ color:var(--oven); }
 .btn.danger:hover,.btn.danger-inline:hover{ background:var(--err-bg); color:var(--err); }
 .linkish{ color:var(--link); }
 input,select,textarea{ background:var(--dough); border-radius:8px; border-color:var(--line); transition:border-color .15s,box-shadow .15s; }
-input:focus,select:focus,textarea:focus{ outline:none; border-color:var(--oven); box-shadow:0 0 0 3px rgba(200,117,43,.2); }
+input:focus,select:focus,textarea:focus{ outline:none; border-color:var(--oven); box-shadow:0 0 0 3px rgba(200,145,31,.25); }
 
 /* Pills: chips, tags, tabs, catalog tree */
 .tag{ background:var(--proof); color:var(--ink); }
@@ -102,7 +105,7 @@ input:focus,select:focus,textarea:focus{ outline:none; border-color:var(--oven);
 @media (prefers-color-scheme: dark){
   .chip.toggle:has(input:checked),.chip.on,.tab.on,.tree li.on > a{ background:var(--oven); border-color:var(--oven); color:#1b120c; }
   .tab.on .n,.tree li.on > a .n,.chip.on .n{ color:#1b120c; }
-  .btn{ background:var(--oven); color:#1b120c; } .btn:hover{ background:#d98a45; color:#1b120c; }
+  .btn{ background:var(--oven); color:#1b120c; } .btn:hover{ background:#d9a236; color:#1b120c; }
   .btn.ghost,.btn.ghost:hover{ color:var(--oven); border-color:var(--oven); background:transparent; }
   .kind-switch label:has(input:checked){ color:var(--oven); border-color:var(--oven); }
 }
@@ -123,7 +126,6 @@ input:focus,select:focus,textarea:focus{ outline:none; border-color:var(--oven);
 
 @media (max-width:440px){
   .top{ padding:8px 12px; }
-  .brand-eyebrow{ font-size:1rem; }
   .brand-name{ display:none; }
   .page-intro h1{ font-size:1.6rem; }
 }

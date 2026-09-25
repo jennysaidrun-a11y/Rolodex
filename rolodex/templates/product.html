@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import back %}
-{% block title %}{{ p.name }} · {{ s.company }}{% endblock %}
+{% block title %}{{ p.name }} · {{ s.company }} · Supplier Rolodex{% endblock %}
 {% block wide %}wide{% endblock %}
 {% block main %}
 {{ back("/supplier/" ~ s.id ~ "/catalog" ~ ("?section=" ~ p.section_id|urlencode if p.section_id), "Catalog") }}

@@ -47,5 +47,8 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
   http(s) (`link` filter).
 - Run `pytest` before committing; tests stub Claude (fake `claude` scripts for the runner).
 
+- **Look**: the shared United Bakery theme (tokens from the project's bakery-theme/theme.md, same in every
+  bakery app) lives in `rolodex/static/bakery-theme.css`, loaded after `style.css`; change both together.
+
 `artifact/` (the earlier claude.ai page) and `routine/` (its cloud routine) are retired; their data
 was imported with `tools/import_artifact.py`.
