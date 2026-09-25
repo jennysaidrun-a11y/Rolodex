@@ -28,6 +28,12 @@ write that supplier back (use the newer version an update returns for any later 
 `read` = cards/pamphlet covers not read yet (do these first). `research` = suppliers queued or
 due. If both are empty, say so and stop.
 
+**Progress for the page.** The page shows a progress bar from `config/analysis`. Right after this
+first `plan`, merge in the plan: `ArtifactData update url=PAGE collection=config doc_id=analysis
+data={"planned": <planned_supplier_ids>, "current": ""}` (if the document doesn't exist yet, `set`
+it with `"state": "running"` too). Before starting each supplier (reading or researching), update
+it with `{"current": "<company name>"}`. The bar fills as suppliers finish; you don't count.
+
 ## 2. Read each card or pamphlet cover
 
 ```

@@ -116,7 +116,8 @@ def cmd_plan(ex: Export) -> None:
         if not unread and _due(s):
             research.append({"supplier_id": sid, "company": s.get("company", ""),
                              "reason": "queued" if s.get("status") == "queued" else f"due (last {s.get('last_checked', '')[:10]})"})
-    _out({"read": read, "research": research,
+    planned = list(dict.fromkeys([r["supplier_id"] for r in read] + [r["supplier_id"] for r in research]))
+    _out({"read": read, "research": research, "planned_supplier_ids": planned,
           "note": "Read every card/pamphlet first; apply-read queues the supplier, so run plan again for research."
           if read else ("Nothing is waiting." if not research else "")})
 

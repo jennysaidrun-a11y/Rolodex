@@ -116,6 +116,11 @@ ul.facts { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
 .confirm { display: grid; gap: 8px; }
 .loading { color: var(--muted); padding: 24px 0; text-align: center; }
 .show-sm { display: none; }
+.progress { height: 12px; border-radius: 99px; background: var(--card); border: 1px solid var(--line); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .6s ease; min-width: 12px; }
+.progress.indeterminate > span { width: 35%; animation: slide 1.4s ease-in-out infinite; }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+.progress-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) {
   .grid2, .cat-row { grid-template-columns: 1fr; }
   .filters { grid-template-columns: 1fr; }
@@ -384,7 +389,33 @@ function analysisLine() {
   if (a.state === "done") return `<p class="muted" style="margin:0">Last analysis ${esc(when(a.finished_at))}: ${esc(a.summary || "done")}</p>`;
   return "";
 }
+const isWaiting = s => unreadDocs(s).length > 0 || ["queued", "researching"].includes(s.status) || isDue(s);
+function analysisProgress() {
+  const a = S.analysis;
+  if (!a || !["requested", "running"].includes(a.state)) return null;
+  const started = a.started_at || a.requested_at || "";
+  const stale = started && Date.now() - new Date(started.endsWith("Z") ? started : started + "Z").getTime() > 3 * 3600e3;
+  const items = (a.planned || []).map(byId).filter(Boolean);
+  const done = items.filter(s => !isWaiting(s)).length;
+  const reading = items.filter(s => unreadDocs(s).length).length;
+  return { state: a.state, total: items.length, done, reading, current: a.current || "", stale };
+}
+function progressPanel(p) {
+  const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+  const label = p.state === "requested" && !p.done ? "Starting the analysis…"
+    : p.total ? `Researched ${p.done} of ${plural(p.total, "supplier")}` : "Analysis running…";
+  const now = p.current ? `Now: ${esc(p.current)}` : p.reading ? `Reading ${plural(p.reading, "card")}` : "";
+  return `<section class="panel">
+    <div class="progress-label"><strong>${label}</strong><span class="muted">${p.total ? pct + "%" : ""}</span></div>
+    <div class="progress ${p.total && (p.done || p.state === "running") ? "" : "indeterminate"}" role="progressbar" aria-label="Analysis progress"
+      aria-valuemin="0" aria-valuemax="${p.total || 100}" aria-valuenow="${p.done}"><span style="${p.total && (p.done || p.state === "running") ? `width:${pct}%` : ""}"></span></div>
+    ${now ? `<p class="muted" style="margin:0">${now}</p>` : ""}
+    ${p.stale ? `<p class="error" style="margin:0">This analysis has been running for over 3 hours and may have stopped. The nightly run will pick up anything left.</p>` : `<p class="muted" style="margin:0">Each supplier's profile fills in as it's finished, a few minutes each. You can keep using the rolodex.</p>`}
+  </section>`;
+}
 function waitingBanner() {
+  const p = analysisProgress();
+  if (p) return progressPanel(p);
   const unread = S.suppliers.reduce((n, s) => n + unreadDocs(s).length, 0);
   const research = S.suppliers.filter(s => !unreadDocs(s).length && (s.status === "queued" || isDue(s))).length;
   const running = ["requested", "running"].includes(S.analysis?.state);
@@ -400,7 +431,8 @@ function waitingBanner() {
 async function analyzeNow() {
   if (!S.mcp || S.starting) return;
   S.starting = true; S._keepScroll = true; render();
-  try { await write("__analysis", () => S.db.doc("config/analysis").set({ state: "requested", requested_at: nowIso() + "Z" })); } catch {}
+  const planned = S.suppliers.filter(isWaiting).map(s => s.id);
+  try { await write("__analysis", () => S.db.doc("config/analysis").set({ state: "requested", requested_at: nowIso() + "Z", planned, current: "" })); } catch {}
   try {
     await S.mcp.callTool(CODE_SERVER, "fire_trigger", { trigger_id: ANALYZE_TRIGGER });
     flash("ok", "Analysis started. Each supplier fills in here as it's finished; reading and researching takes a few minutes per supplier.");

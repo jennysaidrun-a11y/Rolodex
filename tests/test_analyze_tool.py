@@ -37,6 +37,7 @@ def test_read_then_research_then_directory(tmp_path):
     plan = run("plan", ex)
     assert [(r["supplier_id"], r["doc_id"]) for r in plan["read"]] == [("abc", "d1"), ("abc", "d2")]
     assert [r["supplier_id"] for r in plan["research"]] == ["old"]
+    assert plan["planned_supplier_ids"] == ["abc", "old"]
     shown = run("show-read", ex, "abc", "d2")
     assert "front cover of a supplier's pamphlet" in shown["instructions"] and shown["photo_asset_ids"] == ["c" * 32]
 
