@@ -182,6 +182,7 @@ def cmd_apply_research(ex: Export, sid: str, result_file: str, out: str, pdfs: d
     checked = datetime.now()
     attention = bool(result.get("needs_attention"))
     patch = {
+        "progress": None,   # clears the step marker the page's progress bar reads
         "profile": result,
         "summary": result.get("summary", ""),
         "tags": db.clean_tags(result.get("tags", []), ex.vocabulary()),

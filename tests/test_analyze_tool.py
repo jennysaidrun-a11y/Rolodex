@@ -62,7 +62,7 @@ def test_read_then_research_then_directory(tmp_path):
     run("apply-research", ex, "abc", result, tmp_path / "u3.json", "--pdf", "d2=" + "e" * 32)
     update = json.loads((tmp_path / "u3.json").read_text())
     assert update["tags"] == [{"group": "Certification", "name": "SQF"}]        # snapped to existing spelling
-    assert update["needs_attention"] is True and update["status"] == "active"
+    assert update["needs_attention"] is True and update["status"] == "active" and update["progress"] is None
     assert update["next_check"] == (date.today() + timedelta(days=90)).isoformat()
     pamphlet = update["docs"][1]
     assert pamphlet["pdf_url"] == "https://mwf.example/f.pdf" and pamphlet["pdf_asset"] == "e" * 32
