@@ -16,13 +16,16 @@ signed in to Claude. (Source: `artifact/index.html`.)
   **Contributor** can edit details, add notes and tags; **Viewer** can search.
 - **+ Add**: a business card (front, and back if needed) or a pamphlet (just the cover). Take the
   photo or pick it from your library. Claude reads it on the spot and you check the details.
-- **Research** (web lookups, the pamphlet's PDF, the 3-month rechecks) is done by Claude Code:
-  open [claude.ai/code](https://claude.ai/code), start a session on this **Rolodex** repo and type
-  **`/analyze`**. It reads anything not read yet, researches every supplier that's queued or due,
-  saves PDFs, and reports what needs attention. Run it whenever new cards come in, or at least
-  weekly. The page shows how much is waiting.
+- **Research** (web lookups, the pamphlet's PDF, the 3-month rechecks) is done by Claude Code in the
+  cloud. When you've added your cards, tap **Done adding: analyze now**: it starts a Claude Code
+  session (the routine "Rolodex: analyze new cards and rechecks", `trig_01Dq17WHzafvRP6ZmAZvrhb6`)
+  that reads anything not read yet, researches every supplier that's queued or due, saves PDFs and
+  writes the results back; the page shows it running and a one-line summary when it's done. The
+  same routine also runs every night at 23:07 UTC, so nothing waits if nobody taps the button.
+  The button works for the page owner's account; for everyone else the nightly run covers it.
+  (You can also type **`/analyze`** in a claude.ai/code session on this repo.)
 - **Research again**: on a supplier's page, or **Select** several in the list and **Research
-  selected**; they're done on the next `/analyze`.
+  selected**; they're done on the next analysis.
 - **Categories** (top menu) and **tags** filter the list: categories match any you pick, tags must
   all match. Staff edits to categories and tags survive rechecks.
 - **Ask about your suppliers** on the page answers questions from what's on file

@@ -167,10 +167,13 @@ const DEFAULT_CATEGORIES = [
 const TAG_GROUPS = ["Product", "Certification", "Capability", "Service area", "Other"];
 const PLACEHOLDER = "New card";
 const RECHECK_DAYS = 90;
+// The Claude Code routine that runs /analyze in a fresh cloud session (owner's account).
+const ANALYZE_TRIGGER = "trig_01Dq17WHzafvRP6ZmAZvrhb6";
+const CODE_SERVER = "Claude Code Remote";
 
 /* ---------- state ---------- */
 const S = {
-  db: null, assets: null, sample: null, imagesOK: false, canWrite: null, ready: false, dbMissing: false,
+  db: null, assets: null, sample: null, mcp: null, analysis: null, starting: false, imagesOK: false, canWrite: null, ready: false, dbMissing: false,
   suppliers: [], categoriesDoc: null,
   filters: { q: "", cats: new Set(), tags: new Set(), attention: false },
   selecting: false, selected: new Set(),
@@ -367,12 +370,53 @@ function render() {
   S._keepScroll = false;
 }
 
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z");
+  return isNaN(d) ? iso : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function analysisLine() {
+  const a = S.analysis;
+  if (!a) return "";
+  if (a.state === "requested" || a.state === "running")
+    return `<p class="muted" style="margin:0">Analysis ${a.state === "running" ? "running" : "starting"} (started ${esc(when(a.started_at || a.requested_at))}). Suppliers update here as each one is finished.</p>`;
+  if (a.state === "failed") return `<p class="error" style="margin:0">The last analysis (${esc(when(a.finished_at))}) stopped early: ${esc(a.summary || "no details")}</p>`;
+  if (a.state === "done") return `<p class="muted" style="margin:0">Last analysis ${esc(when(a.finished_at))}: ${esc(a.summary || "done")}</p>`;
+  return "";
+}
 function waitingBanner() {
   const unread = S.suppliers.reduce((n, s) => n + unreadDocs(s).length, 0);
   const research = S.suppliers.filter(s => !unreadDocs(s).length && (s.status === "queued" || isDue(s))).length;
-  if (!unread && !research) return "";
+  const running = ["requested", "running"].includes(S.analysis?.state);
+  if (!unread && !research) return analysisLine() ? `<section class="panel">${analysisLine()}</section>` : "";
   const parts = [unread && plural(unread, "card/pamphlet", "cards/pamphlets") + " to read", research && plural(research, "supplier") + " to research"].filter(Boolean);
-  return `<p class="notice">Waiting for Claude Code: ${parts.join(", ")}. Run <strong>/analyze</strong> in Claude Code (claude.ai/code, Rolodex repo) to research them.</p>`;
+  return `<section class="panel" style="background:var(--warn-bg);border-color:var(--warn-bg)">
+    <div class="between"><span style="color:var(--warn)"><strong>Waiting for analysis:</strong> ${parts.join(", ")}.</span>
+    ${S.mcp && S.canWrite !== false ? `<button class="btn" id="analyze-now" ${running || S.starting ? "disabled" : ""}>${running || S.starting ? "Analysis running…" : "Done adding: analyze now"}</button>` : ""}</div>
+    ${analysisLine()}
+    <p class="muted" style="margin:0">Add all your cards first, then tap the button once. It also runs automatically every night.</p>
+  </section>`;
+}
+async function analyzeNow() {
+  if (!S.mcp || S.starting) return;
+  S.starting = true; S._keepScroll = true; render();
+  try { await write("__analysis", () => S.db.doc("config/analysis").set({ state: "requested", requested_at: nowIso() + "Z" })); } catch {}
+  try {
+    await S.mcp.callTool(CODE_SERVER, "fire_trigger", { trigger_id: ANALYZE_TRIGGER });
+    flash("ok", "Analysis started. Each supplier fills in here as it's finished; reading and researching takes a few minutes per supplier.");
+  } catch (e) {
+    const msg = {
+      server_not_connected: "Starting the analysis needs the Claude Code connection on the rolodex owner's account. It still runs automatically every night.",
+      not_in_manifest: "You declined the Claude Code permission for this page. Reload the page to be asked again, or wait for the nightly run.",
+      needs_reauth: "Reconnect Claude Code in claude.ai Settings → Connectors, then try again.",
+      blocked_by_policy: "Your organization doesn't allow starting Claude Code from pages. The analysis still runs automatically every night.",
+      tool_error: "Only the rolodex owner can start the analysis from here. It still runs automatically every night.",
+      server_unavailable: "Claude Code didn't answer. It may have started anyway; check back in a few minutes before trying again.",
+    }[e?.code] || "The analysis didn't start (" + (e?.code || "error") + "). It still runs automatically every night.";
+    flash(e?.code === "server_unavailable" ? "notice" : "error", msg);
+    if (e?.code !== "server_unavailable") { try { await write("__analysis", () => S.db.doc("config/analysis").set({ state: "failed", finished_at: nowIso() + "Z", summary: "Couldn't start from the page." })); } catch {} }
+  }
+  S.starting = false; S._keepScroll = true; render();
 }
 
 function renderHome() {
@@ -452,9 +496,10 @@ function renderHome() {
     const ids = [...S.selected];
     for (const id of ids) await updateSupplier(id, { status: "queued", next_check: today() });
     S.selecting = false; S.selected.clear();
-    flash("ok", `${plural(ids.length, "supplier")} queued for research. Run /analyze in Claude Code to research them.`);
+    flash("ok", `${plural(ids.length, "supplier")} queued. Tap "Done adding: analyze now" to research them now, or they're done in tonight's run.`);
     render();
   });
+  app.querySelector("#analyze-now")?.addEventListener("click", analyzeNow);
   app.querySelector("#ask-form")?.addEventListener("submit", e => { e.preventDefault(); ask(app.querySelector("#ask-q").value.trim()); });
   app.querySelector("#ask-stop")?.addEventListener("click", () => S.ask?.ctl?.abort());
 }
@@ -508,15 +553,16 @@ function renderSupplier(id) {
   app.innerHTML = `
     ${flashHtml()}
     <p><a href="#home">← All suppliers</a></p>
+    ${waitingBanner()}
     <section class="panel">
       <div class="between"><div><h1>${esc(s.company)}</h1>
         <p class="muted" style="margin:4px 0 0">${(s.categories || []).map(c => `<a href="#home" data-browse="${esc(c)}">${esc(c)}</a>`).join(" · ")}</p></div>
         ${S.canWrite !== false ? `<a class="btn small ghost" href="#edit-${esc(s.id)}">Edit</a>` : ""}</div>
       ${tags.length ? `<div class="chips">${tags.map(t => `<button class="chip" data-tagfilter="${esc(t.name)}" title="${esc(t.group)}: show every supplier with this tag">${esc(t.name)}</button>`).join("")}</div>` : ""}
-      ${unread.length ? `<p class="notice">${plural(unread.length, "photo")} not read yet. Claude Code reads ${unread.length > 1 ? "them" : "it"} and researches the company on the next <strong>/analyze</strong> run${S.canWrite !== false ? `; you can <a href="#edit-${esc(s.id)}">type details in</a> now` : ""}.</p>`
-        : s.status === "queued" || (isDue(s) && s.last_checked) ? `<p class="notice">Waiting for research. It runs the next time someone runs <strong>/analyze</strong> in Claude Code.</p>`
+      ${unread.length ? `<p class="notice">${plural(unread.length, "photo")} not read yet. The analysis reads ${unread.length > 1 ? "them" : "it"} and researches the company${S.canWrite !== false ? `; you can <a href="#edit-${esc(s.id)}">type details in</a> now` : ""}.</p>`
+        : s.status === "queued" || (isDue(s) && s.last_checked) ? ""
         : s.status === "researching" ? `<p class="notice">Claude Code is researching this supplier right now.</p>` : ""}
-      ${s.status === "error" ? `<p class="error">The last research attempt failed: ${esc(s.research_error)} It will be tried again on the next /analyze run.</p>` : ""}
+      ${s.status === "error" ? `<p class="error">The last research attempt failed: ${esc(s.research_error)} It will be tried again on the next analysis.</p>` : ""}
       ${s.needs_attention ? `<div class="alert"><span><strong>Needs attention:</strong> ${esc(s.attention_note)}</span>${S.canWrite !== false ? `<button class="btn small" id="reviewed">Mark as reviewed</button>` : ""}</div>` : ""}
       <dl class="contact">
         ${s.contact_name ? `<dt>Contact</dt><dd>${esc(s.contact_name)}${s.contact_title ? ", " + esc(s.contact_title) : ""}</dd>` : ""}
@@ -582,9 +628,10 @@ function renderSupplier(id) {
   }));
   app.querySelectorAll("[data-browse]").forEach(el => el.addEventListener("click", () => { S.filters.cats = new Set([el.dataset.browse]); S.filters.tags.clear(); S.filters.q = ""; }));
   app.querySelectorAll("[data-tagfilter]").forEach(el => el.addEventListener("click", () => { S.filters = { q: "", cats: new Set(), tags: new Set([el.dataset.tagfilter]), attention: false }; location.hash = "home"; }));
+  app.querySelector("#analyze-now")?.addEventListener("click", analyzeNow);
   app.querySelector("#reviewed")?.addEventListener("click", () => updateSupplier(s.id, { needs_attention: false }));
   app.querySelector("#research-now")?.addEventListener("click", async () => {
-    if (await updateSupplier(s.id, { status: "queued", next_check: today() })) flash("ok", "Queued. Run /analyze in Claude Code to research it.");
+    if (await updateSupplier(s.id, { status: "queued", next_check: today() })) flash("ok", "Queued. Tap \"Done adding: analyze now\" to research it now, or it's done in tonight's run.");
   });
   app.querySelector("#note-form")?.addEventListener("submit", async e => {
     e.preventDefault();
@@ -684,7 +731,7 @@ function renderAdd(existingId) {
         <p class="muted" data-k="pamphlet" hidden style="margin:0">Just the cover. Claude finds the full PDF version online (usually on the supplier's website) and keeps a copy with the supplier.</p>
         <button class="btn big" id="add-btn" ${S.busy ? "disabled" : ""}>${S.busy ? esc(S.busy) : "Save"}</button>
       </form>
-      <p class="muted" style="margin:0">Take a photo or pick one from your library. ${S.imagesOK ? "Claude reads it right away; the web research happens the next time someone runs /analyze in Claude Code." : "Claude Code reads it and researches the company the next time someone runs /analyze."}</p>
+      <p class="muted" style="margin:0">Take a photo or pick one from your library. ${S.imagesOK ? "Claude reads it right away. When you've added everything, tap \"Done adding: analyze now\" for the web research." : "When you've added everything, tap \"Done adding: analyze now\" and Claude reads and researches it."}</p>
     </section>`;
   const form = app.querySelector("#add-form");
   const show = () => {
@@ -737,16 +784,16 @@ async function addPhotos(kind, files, existing) {
       const reading = cleanReading(await S.sample.json(cardPrompt(kind), { images: blobs, cache: false }));
       const fresh = byId(id) || { ...(existing || {}), id, company: PLACEHOLDER, docs: [...(existing?.docs || []), doc], notes: existing?.notes || [], categories: existing?.categories || [] };
       await write(id, () => supRef(id).update(applyReading(fresh, doc.id, reading)));
-      flash("ok", existing ? "Added and read. Check the details below; the research runs on the next /analyze." : "Card read. Check the details, then Save. The research runs on the next /analyze.");
+      flash("ok", existing ? "Added and read. Add more, or tap \"Done adding: analyze now\" to research." : "Card read. Check the details and Save. When you've added everything, tap \"Done adding: analyze now\".");
       S.busy = false;
       location.hash = existing ? "s-" + id : "edit-" + id;
       render(); return;
     } catch (e) {
       if (e?.code !== "not_granted" && e?.code !== "cancelled") console.warn("card read failed", e);
-      flash("notice", "Saved. Claude couldn't read it here, so Claude Code will read it on the next /analyze run. You can type the details in now.");
+      flash("notice", "Saved. Claude couldn't read it here, so the analysis will read it. You can type the details in now.");
     }
   } else {
-    flash("ok", "Saved. Claude Code reads it and researches the company on the next /analyze run.");
+    flash("ok", "Saved. Add more, or tap \"Done adding: analyze now\" when you're finished.");
   }
   S.busy = false;
   location.hash = "s-" + id;
@@ -841,7 +888,9 @@ window.addEventListener("hashchange", () => { S.confirmDelete = false; window.sc
   }, e => { flash("error", "Lost the connection to the rolodex (" + e.code + "). Reload the page."); S.ready = true; render(); });
   db.doc("config/categories").onSnapshot(snap => { S.categoriesDoc = snap.exists ? snap.data() : null; S._keepScroll = true; settle(); },
     () => settle());
+  db.doc("config/analysis").onSnapshot(snap => { S.analysis = snap.exists ? snap.data() : null; S._keepScroll = true; render(); }, () => {});
   claude.use("assets").then(a => { S.assets = a; S._keepScroll = true; render(); });
+  claude.use("mcp").then(m => { S.mcp = m; S._keepScroll = true; render(); });
   claude.use("sample").then(async sm => {
     S.sample = sm;
     if (sm) { try { S.imagesOK = !!(await sm.limits())?.images; } catch { S.imagesOK = false; } }

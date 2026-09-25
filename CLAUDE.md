@@ -6,7 +6,10 @@ supplier profiles out, rechecked every 90 days, searchable by keyword, category,
 **The live app is a claude.ai page: https://claude.ai/artifact/L1xZMaHagpDhwLrykRnxF2**
 (source `artifact/index.html`, one self-contained file; publish updates with the Artifact tool,
 `url` above, keeping its capabilities db, assets, sample, user). Its data is the page's database:
-`suppliers/<id>` documents and `config/categories`. `/analyze` and `/find-supplier`
+`suppliers/<id>` documents, `config/categories`, and `config/analysis` (state of the latest
+analysis run: requested/running/done/failed, with a summary). The page's "Done adding: analyze
+now" button fires the routine `trig_01Dq17WHzafvRP6ZmAZvrhb6` (also nightly at 23:07 UTC) through
+the Claude Code Remote connector; that routine clones this repo and follows the analyze skill. `/analyze` and `/find-supplier`
 (`.claude/skills/`) read and write it with ArtifactData, using `tools/analyze.py`, which reuses the
 prompts and schemas in `rolodex/claude.py`. Keep the field names in `artifact/index.html`,
 `tools/analyze.py` and the prompts in step.
