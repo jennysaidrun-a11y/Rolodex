@@ -80,9 +80,15 @@ tag list; they run in parallel. Research one yourself only when it's the only on
    phone). What they sell to a bakery, categories, locations (HQ, plants, warehouses), service
    area, stock and lead times, minimum order. Go through their catalog/shop/product pages and list
    6-15 products a bakery would care about, each with page_url (the product page) and image_url
-   (the direct URL of that product's own photo: open the product page with WebFetch and take the
-   product image; not logos, banners, icons or placeholders; empty if none). Use a distributor's
-   page for their brand if they have no site.
+   (the direct URL of that product's own photo; not logos, banners, icons or placeholders). Many
+   sites load photos with scripts that WebFetch doesn't show, so get the photo from the page's HTML:
+   `curl -sL --max-time 20 "<page_url>" | grep -oiE '(og:image|twitter:image)"[^>]*content="[^"]+"|<img[^>]+(src|data-src)="[^"]+"' | head -40`
+   and pick the product's image (og:image is usually the main product photo; make relative URLs
+   absolute). Reject an image that is the same on every product page, or whose name says logo,
+   banner, og_fb, share, placeholder or icon: that's a site-wide picture, not the product. If the supplier's page has none, use the photo of the same product (same brand and
+   item) from a distributor listing (WebstaurantStore, Uline, Grainger, Amazon Business…) and keep
+   the supplier's page_url. Aim for a photo on most products. Use a distributor's page for their
+   brand if they have no site.
 2. **Pricing** (required):
 Pricing is required: the bakery needs a realistic idea of cost before calling the rep. Most B2B suppliers don't publish prices, so work outward until you have real numbers, and label each:
 - supplier_price: the supplier's own price list, catalog, online store, or prices in their pamphlet PDF
