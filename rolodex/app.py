@@ -388,12 +388,17 @@ PER_PAGE = 48
 @app.get("/img")
 def image(u: str, w: int = 0):
     """A supplier's product photo, fetched from their site once and then served from the cache."""
-    found = fetch_image(u, w)
-    if found is None:
-        return FileResponse(HERE / "static" / "no-photo.svg", media_type="image/svg+xml",
-                            headers={"Cache-Control": "max-age=3600"})
-    path, media_type = found
-    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "max-age=2592000"})
+    try:
+        found = fetch_image(u, w)
+        if found is not None:
+            path, media_type = found
+            # read whole: the photo check may be refreshing this cache file at the same moment
+            return Response(path.read_bytes(), media_type=media_type or "application/octet-stream",
+                            headers={"Cache-Control": "max-age=2592000"})
+    except Exception:
+        logging.getLogger("rolodex.images").exception("Photo %s", u)
+    return FileResponse(HERE / "static" / "no-photo.svg", media_type="image/svg+xml",
+                        headers={"Cache-Control": "max-age=600"})
 
 
 @app.get("/supplier/{supplier_id}/catalog")
@@ -447,7 +452,7 @@ async def doc_view(request: Request, supplier_id: int, index: int, p: str):
     """A safety data sheet or spec sheet, shown in the app page by page (read from their site, not saved)."""
     s, prod, d = _doc(supplier_id, p, index)
     data = await run_in_threadpool(docview.fetch, d["url"])
-    pages = await run_in_threadpool(docview.page_count, data) if data else 0
+    pages = await run_in_threadpool(docview.page_count, data) if data else 0   # 0: shows "couldn't open"
     return page(request, "doc.html", s=s, p=prod, d=d, index=index, pages=pages)
 
 
