@@ -4,8 +4,12 @@
 {% block wide %}wide{% endblock %}
 {% block main %}
 {{ back("/", "Suppliers") }}
-<section class="card">
+<header class="page-intro">
+  <span class="eyebrow">Products</span>
   <h1>Search every catalog</h1>
+  <p>Every product from every supplier's catalog, in one place.</p>
+</header>
+<section class="card">
   <form method="get" action="/products" class="store-search">
     <input type="search" name="q" value="{{ q }}" placeholder="e.g. bread bag, 9x13 pan, stretch film, item #" {% if not question %}autofocus{% endif %}>
     <button class="btn">Search</button>

@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block main %}
+<header class="page-intro">
+  <span class="eyebrow">Purchasing</span>
+  <h1>Our suppliers</h1>
+  <p>{{ total }} supplier{{ "s" if total != 1 }} on file. Search by company, product or category, or ask Claude.</p>
+</header>
 {% if not use_api %}
 {% if run.state in ("done", "failed", "cancelled") and run.summary %}
 <p class="{{ 'error' if run.state == 'failed' else 'notice' }}">Last analysis ({{ run.finished_at.replace("T", " ")[:16] if run.finished_at }}): {{ run.summary }}

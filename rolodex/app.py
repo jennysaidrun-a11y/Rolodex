@@ -33,6 +33,7 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["without"] = lambda request, key, value: "/?" + urlencode(
     [(k, v) for k, v in request.query_params.multi_items() if not (k == key and v == value)])
 templates.env.globals["use_api"] = config.USE_API
+templates.env.globals["bakery_name"] = config.BAKERY_NAME
 templates.env.globals["git_sync"] = config.GIT_SYNC
 templates.env.globals["analysis_progress"] = lambda: runner.progress()
 templates.env.globals["sync_status"] = lambda: gitsync.last_result
