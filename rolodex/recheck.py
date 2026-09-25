@@ -55,6 +55,8 @@ def save_research(supplier_id: int, result: dict) -> None:
         db.update_supplier(supplier_id, categories=merged)
     db.record_check(supplier_id, result)
     _save_brochures(supplier_id, result.get("brochures", []))
+    from . import logos
+    logos.ensure(supplier_id)   # their logo, once, for the icon next to their name
 
 
 MAX_PDF_BYTES = 40 * 1024 * 1024

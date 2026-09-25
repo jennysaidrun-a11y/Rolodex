@@ -20,7 +20,8 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 MAX_BYTES = 15 * 1024 * 1024
 SIZES = (0, 200, 400, 800)
 FAILED_RETRY_SECONDS = 6 * 3600   # 0 = as on their site
-TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"GIF8": "image/gif", b"RIFF": "image/webp"}
+TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"GIF8": "image/gif", b"RIFF": "image/webp",
+         b"\x00\x00\x01\x00": "image/x-icon"}
 
 
 def _public_host(url: str) -> bool:
@@ -89,7 +90,7 @@ def fetch_image(url: str, width: int = 0) -> tuple[Path, str] | None:
             return None
         original.write_bytes(data)
     kind = _sniff(original.read_bytes()[:1000])
-    if kind in ("image/svg+xml", "image/gif") or (not width and kind != "image/avif"):
+    if kind in ("image/svg+xml", "image/gif") or (not width and kind not in ("image/avif", "image/x-icon")):
         return original, kind
     width = width or 1600   # AVIF at full size: still turned into a JPEG every browser shows
     small = folder / f"{key}-{width}.jpg"

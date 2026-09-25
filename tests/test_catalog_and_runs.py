@@ -310,3 +310,27 @@ def test_ask_claude_products_api(client, monkeypatch):
     monkeypatch.setattr(app_module.claude, "ask_products", ask_products)
     page = client.post("/products/ask", data={"question": "pallet wrap"}).text
     assert seen["n"] == len(CATALOG["products"]) and "Try the film." in page and "Wraps pallets" in page
+
+
+def test_catalog_review_adds_what_the_pages_show(client, capsys, monkeypatch):
+    sid = new_supplier()
+    db.save_catalog(sid, CATALOG)
+    ok, pending = run_tasks(capsys, "list")
+    assert [r["supplier_id"] for r in pending["review"]] == [sid]
+    ok, review = run_tasks(capsys, "show", "review", str(sid))
+    assert "missing" in review["products"][0] and "safety data sheets" in review["instructions"]
+    import json as _json
+    f = tmp_file = (config.DATA_DIR / "review.json")
+    f.write_text(_json.dumps({"note": "Checked every page.", "products": [
+        {"id": "SF-1", "specs": [["Width", "18 in"], ["Thickness", "80 gauge"]],
+         "files": [{"name": "Safety data sheet (US)", "url": "https://bags.example/sds/sf1.pdf"}],
+         "image_url": "https://bags.example/img/sf1.jpg"},
+        {"id": "no-such-product", "specs": [["x", "y"]]}]}))
+    ok, saved = run_tasks(capsys, "save", "products", str(sid), str(tmp_file))
+    assert saved["saved"] and saved["changed"] == 1 and saved["with_files"] == 1
+    p = db.catalog_product(sid, "SF-1")
+    assert p["image_url"].endswith("sf1.jpg")
+    ok, pending = run_tasks(capsys, "list")
+    assert pending["review"] == []
+    page = client.get(f"/supplier/{sid}/catalog/item/SF-1").text
+    assert "80 gauge" in page and "Safety data sheet (US)" in page

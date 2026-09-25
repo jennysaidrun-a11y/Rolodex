@@ -53,7 +53,9 @@ def waiting() -> tuple[list[dict], list[dict]]:
     """(cards/pamphlets to read, suppliers to research)."""
     cards = db.unread_cards()
     unread = {c["supplier_id"] for c in cards}
-    return cards, [s for s in db.due_for_recheck() if s["id"] not in unread]
+    research = [s for s in db.due_for_recheck() if s["id"] not in unread]
+    ids = {s["id"] for s in research} | unread
+    return cards, research + [s for s in db.needs_review() if s["id"] not in ids]
 
 
 def start(trigger: str = "button") -> str:

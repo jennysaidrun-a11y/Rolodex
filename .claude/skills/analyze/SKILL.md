@@ -13,7 +13,8 @@ GitHub by itself.
 ## 1. Start
 
 `python -m rolodex.tasks begin`, then `python -m rolodex.tasks list`. It lists cards/pamphlets to
-read and suppliers to research. If both are empty, run `finish Nothing was waiting.` and stop.
+read, suppliers to research and catalogs to review. If all are empty, run `finish Nothing was waiting.`
+and stop.
 
 ## 2. Read each card or pamphlet cover
 
@@ -116,9 +117,24 @@ leave out discontinued ones. Never save a copy with fewer photos than before for
    - A supplier with no product list at all (a service company, say) gets a catalog of its services
      the same way, from its services pages.
 
-## 4. Anything added meanwhile
+## 4. Review each catalog against their website
 
-Run `list` again; if anything new is waiting, do steps 2-3 for it. Repeat until nothing is waiting.
+Every catalog copy, automatic or by hand, is then checked by you, product by product, because the
+automatic copy misses things (a safety data sheet under a Downloads tab, a size table, the photo of
+each size). Run `list` again; for each supplier in `review` (a catalog saved in step 3 shows up here
+too), give each to its own subagent when there are 2 or more:
+1. `python -m rolodex.tasks current <id>` and `python -m rolodex.tasks progress <id> 1 2 Checking every product page`.
+2. `python -m rolodex.tasks show review <id>` lists every product with what it has and what's `missing`,
+   and the instructions. Follow them: open every product page and add what it shows (specs and
+   dimensions, item numbers, photos, SDS / data sheets / spec sheets, certificates), in English.
+   For a big catalog split the products into batches of about 40 for parallel subagents.
+3. Write `work/review-<id>.json` and save it: `python -m rolodex.tasks save products <id> work/review-<id>.json`.
+   Saving marks the catalog reviewed, even when nothing needed adding (save `{"products": []}` with a
+   `note` then).
+
+## 5. Anything added meanwhile
+
+Run `list` again; if anything new is waiting, do steps 2-4 for it. Repeat until nothing is waiting.
 
 ## 5. Finish
 

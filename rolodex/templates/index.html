@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import logo %}
 {% block main %}
 <header class="page-intro">
   <span class="eyebrow">Purchasing</span>
@@ -12,7 +13,7 @@
 {% endif %}
 {% if (waiting_cards or waiting_scans) and run.state != "running" %}
 <section class="card analyze-box">
-  <p><strong>Waiting:</strong> {% if waiting_cards %}{{ waiting_cards }} card/pamphlet{{ "s" if waiting_cards != 1 }} to read{% endif %}{% if waiting_cards and waiting_scans %}, {% endif %}{% if waiting_scans %}{{ waiting_scans }} supplier{{ "s" if waiting_scans != 1 }} to research{% endif %}.</p>
+  <p><strong>Waiting:</strong> {% if waiting_cards %}{{ waiting_cards }} card/pamphlet{{ "s" if waiting_cards != 1 }} to read{% endif %}{% if waiting_cards and waiting_scans %}, {% endif %}{% if waiting_scans %}{{ waiting_scans }} supplier{{ "s" if waiting_scans != 1 }} to research or check{% endif %}.</p>
   {% if not can_run %}
   <form method="post" action="/analysis/start"><input type="hidden" name="return_to" value="/">
     <button class="btn">Done adding: analyze now</button></form>
@@ -107,7 +108,8 @@
   <li>
     <label class="pick" title="{{ 'Not read yet' if s.status == 'unread' else ('Review the card first' if s.status == 'new' else ('Already queued' if busy else 'Select for scan')) }}">
       <input type="checkbox" name="ids" value="{{ s.id }}" {% if busy %}disabled{% endif %}></label>
-    <a href="/supplier/{{ s.id }}">
+    <a href="/supplier/{{ s.id }}" class="with-logo">
+      {{ logo(s) }}<span class="who">
       <strong>{{ s.company }}</strong>
       {% if s.needs_attention %}<span class="tag warn">Needs attention</span>{% endif %}
       {% if s.status == "unread" %}<span class="tag">Not read yet</span>{% endif %}
@@ -117,6 +119,7 @@
       <span class="muted">{{ s.categories|join(", ") }}{% if s.last_checked %} · scanned {{ s.last_checked[:10] }}{% endif %}</span>
       {% if s.summary %}<span class="summary">{{ s.summary }}</span>{% endif %}
       {% if s.all_tags %}<span class="mini-tags">{% for t in s.all_tags[:8] %}<span class="mini">{{ t.name }}</span>{% endfor %}{% if s.all_tags|length > 8 %}<span class="muted">+{{ s.all_tags|length - 8 }}</span>{% endif %}</span>{% endif %}
+      </span>
     </a>
   </li>
   {% endfor %}
