@@ -208,9 +208,9 @@ def _get(supplier_id: int) -> dict:
 
 
 @app.get("/supplier/{supplier_id}")
-def supplier(request: Request, supplier_id: int):
+def supplier(request: Request, supplier_id: int, tab: str = ""):
     s = _get(supplier_id)
-    return page(request, "supplier.html", s=s, p=s["profile"], cards=db.cards_for(supplier_id),
+    return page(request, "supplier.html", s=s, p=s["profile"], tab=tab, cards=db.cards_for(supplier_id),
                 notes=db.notes_for(supplier_id), checks=db.checks_for(supplier_id),
                 catalog_preview=db.catalog_products(supplier_id, None, "", 8)[0])
 
@@ -285,7 +285,7 @@ def add_note(supplier_id: int, text: str = Form(...), author: str = Form("")):
     _get(supplier_id)
     if text.strip():
         db.add_note(supplier_id, text.strip(), author.strip())
-    return back_to(f"/supplier/{supplier_id}#notes")
+    return back_to(f"/supplier/{supplier_id}?tab=notes")
 
 
 @app.post("/supplier/{supplier_id}/recheck")

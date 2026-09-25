@@ -53,6 +53,25 @@
     {% if s.status in ("unread", "queued", "researching", "new") %}disabled{% endif %}>Scan now</button></form>
 </section>
 
+{% set tabs = [
+  ("catalog", "Catalog", s.catalog.total or 0),
+  ("products", "Products & pricing", (p.products|length) if p else 0),
+  ("locations", "Locations", (p.locations|length) if p else 0),
+  ("certifications", "Certifications", (p.certifications|length) if p else 0),
+  ("regulatory", "Regulatory", (p.regulatory|length) if p else 0),
+  ("reviews", "Reviews & news", (p.news|length) if p else 0),
+  ("documents", "Documents", (p.brochures|length) if p and p.brochures else 0),
+  ("notes", "Notes", notes|length),
+  ("photos", "Cards & photos", cards|length),
+  ("history", "History", checks|length),
+] %}
+{% set names = tabs|map(attribute=0)|list %}
+{% set tab = tab if tab in names else ("catalog" if (s.catalog.total or catalog_preview or s.catalog.note) else "products") %}
+<nav class="tabs" aria-label="Supplier information">
+  {% for key, label, n in tabs %}<a href="/supplier/{{ s.id }}?tab={{ key }}" class="tab{{ ' on' if key == tab }}"{% if key == tab %} aria-current="page"{% endif %}>{{ label }}{% if n %} <span class="n">{{ n }}</span>{% endif %}</a>{% endfor %}
+</nav>
+
+{% if tab == "catalog" %}
 {% if s.catalog.total or catalog_preview %}
 <section class="card"><div class="head"><h2>Catalog</h2>
   <a class="btn small" href="/supplier/{{ s.id }}/catalog">Browse all {{ s.catalog.total }} products</a></div>
@@ -63,8 +82,10 @@
 <section class="card"><h2>Catalog</h2><p class="muted">{{ s.catalog.note }}</p></section>
 {% endif %}
 
-{% if p %}
-{% if p.changes_since_last_check %}
+{% if not (s.catalog.total or catalog_preview or s.catalog.note) %}<section class="card"><p class="muted">No catalog copied yet. It's copied from their website on the next analysis.</p></section>{% endif %}
+
+{% elif tab == "products" %}
+{% if p %}{% if p.changes_since_last_check %}
 <section class="card"><h2>Changed since the last check</h2>
   <ul>{% for c in p.changes_since_last_check %}<li>{{ c }}</li>{% endfor %}</ul></section>
 {% endif %}
@@ -85,30 +106,50 @@
   {% if p.minimum_order %}<h3>Minimum order</h3><p>{{ p.minimum_order }}</p>{% endif %}
 </section>
 
-<section class="card"><h2>Locations</h2>
+{% else %}<section class="card"><p class="muted">Not researched yet. It fills in after the next analysis.</p></section>
+{% endif %}
+
+{% elif tab == "locations" %}
+{% if p %}<section class="card"><h2>Locations</h2>
   {% if p.locations %}<ul>{% for x in p.locations %}<li>{{ x.kind }}: {{ x.address }}</li>{% endfor %}</ul>{% endif %}
   {% if p.service_area %}<p><strong>Serves:</strong> {{ p.service_area }}</p>{% endif %}
   {% if not p.locations and not p.service_area %}<p class="muted">Nothing found.</p>{% endif %}
 </section>
 
-<section class="card"><h2>Certifications</h2>
+{% else %}<section class="card"><p class="muted">Not researched yet. It fills in after the next analysis.</p></section>
+{% endif %}
+
+{% elif tab == "certifications" %}
+{% if p %}<section class="card"><h2>Certifications</h2>
   {% if p.certifications %}<ul>{% for x in p.certifications %}<li>{{ x.name }}: {{ x.status }}{{ src(x.source) }}</li>{% endfor %}</ul>
   {% else %}<p class="muted">None found.</p>{% endif %}
 </section>
 
-<section class="card"><h2>Regulatory</h2>
+{% else %}<section class="card"><p class="muted">Not researched yet. It fills in after the next analysis.</p></section>
+{% endif %}
+
+{% elif tab == "regulatory" %}
+{% if p %}<section class="card"><h2>Regulatory</h2>
   {% if p.regulatory %}<ul>{% for x in p.regulatory %}<li><strong>{{ x.date }} {{ x.kind }}</strong>: {{ x.description }}{{ src(x.source) }}</li>{% endfor %}</ul>
   {% else %}<p class="muted">No recalls, warning letters or enforcement actions found.</p>{% endif %}
 </section>
 
-<section class="card"><h2>Reviews &amp; reputation</h2>
+{% else %}<section class="card"><p class="muted">Not researched yet. It fills in after the next analysis.</p></section>
+{% endif %}
+
+{% elif tab == "reviews" %}
+{% if p %}<section class="card"><h2>Reviews &amp; reputation</h2>
   <p>{{ p.reviews.summary or "Nothing found." }}</p>
   {% for u in p.reviews.sources %}{{ src(u) }}{% endfor %}
   {% if p.news %}<h3>News</h3>
   <ul>{% for x in p.news %}<li>{{ x.date }}: {{ x.headline }}{{ src(x.source) }}</li>{% endfor %}</ul>{% endif %}
 </section>
 
-{% set other_pdfs = (p.brochures or [])|selectattr("card_id", "in", ["0", 0])|selectattr("pdf_url")|list %}
+{% else %}<section class="card"><p class="muted">Not researched yet. It fills in after the next analysis.</p></section>
+{% endif %}
+
+{% elif tab == "documents" %}
+{% if p %}{% set other_pdfs = (p.brochures or [])|selectattr("card_id", "in", ["0", 0])|selectattr("pdf_url")|list %}
 {% set pamphlet_pdfs = (p.brochures or [])|rejectattr("card_id", "in", ["0", 0])|selectattr("summary")|list %}
 {% if other_pdfs or pamphlet_pdfs %}
 <section class="card"><h2>Brochures &amp; documents</h2>
@@ -125,7 +166,9 @@
 </section>
 {% endif %}
 {% endif %}
+{% if not p or not (p.brochures or p.sources) %}<section class="card"><p class="muted">No brochures or documents found yet.</p></section>{% endif %}
 
+{% elif tab == "notes" %}
 <section class="card" id="notes"><h2>Notes</h2>
   <form method="post" action="/supplier/{{ s.id }}/notes" class="note-form">
     <textarea name="text" rows="2" required placeholder="Who stopped by, what they offered, quotes, samples…"></textarea>
@@ -137,6 +180,8 @@
   </ul>
 </section>
 
+
+{% elif tab == "photos" %}
 {% if cards %}
 <section class="card" id="photos"><div class="head"><h2>Cards &amp; pamphlets</h2>
   <a class="btn small ghost" href="/add?supplier={{ s.id }}">+ Add</a></div>
@@ -158,9 +203,13 @@
   <a class="btn small ghost" href="/add?supplier={{ s.id }}">+ Add</a></div></section>
 {% endif %}
 
+
+{% elif tab == "history" %}
 {% if checks %}
 <section class="card"><h2>Check history</h2>
   <ul>{% for c in checks %}<li>{{ c.checked_at[:10] }}{% if c.changes %}: {{ c.changes|replace("\n", "; ") }}{% endif %}</li>{% endfor %}</ul>
 </section>
+{% endif %}
+{% if not checks %}<section class="card"><p class="muted">Not checked yet.</p></section>{% endif %}
 {% endif %}
 {% endblock %}
