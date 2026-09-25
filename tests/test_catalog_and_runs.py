@@ -103,6 +103,16 @@ def test_image_proxy_only_fetches_public_sites(client, monkeypatch):
     assert max(Image.open(io.BytesIO(r.content)).size) == 400
     client.get("/img", params={"u": "https://bags.example/big.jpg", "w": 800})
     assert len(calls) == 1
+    # Sites that send AVIF (whatever the file is called) still show, as a JPEG.
+    from PIL import features
+    if features.check("avif"):
+        buf = io.BytesIO()
+        Image.new("RGB", (900, 600), "orange").save(buf, "AVIF")
+        monkeypatch.setattr(images._opener, "open", lambda req, timeout: Resp(buf.getvalue()))
+        r = client.get("/img", params={"u": "https://bags.example/jug.jpg?box_crop=800,800", "w": 400})
+        assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+        r = client.get("/img", params={"u": "https://bags.example/jug.jpg?box_crop=800,800", "w": 0})
+        assert r.headers["content-type"] == "image/jpeg"
 
 
 def test_repeat_card_goes_onto_existing_supplier(client, capsys, monkeypatch):
