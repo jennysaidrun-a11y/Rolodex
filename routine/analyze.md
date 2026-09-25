@@ -1,8 +1,8 @@
 # Supplier Rolodex analysis (self-contained)
 
 This is the whole procedure. It needs no repository and runs no downloaded code: use only
-ArtifactData, Artifact, WebSearch, WebFetch, Read, and plain shell commands (date, curl, file,
-mkdir). Work without asking questions. For every timestamp use the output of
+ArtifactData, Artifact, WebSearch, WebFetch, Read, plain shell commands (date, curl, file,
+mkdir), and small Python scripts you write yourself. Work without asking questions. For every timestamp use the output of
 `date -u +%Y-%m-%dT%H:%M:%SZ` (never guess). Work in /tmp/rolodex.
 
 PAGE = https://claude.ai/artifact/L1xZMaHagpDhwLrykRnxF2  (load ArtifactData and Artifact with ToolSearch)
@@ -16,7 +16,13 @@ PAGE = https://claude.ai/artifact/L1xZMaHagpDhwLrykRnxF2  (load ArtifactData and
   (unread | queued | researching | active | closed | error), needs_attention, attention_note,
   research_error, tags [{group, name}], staff_tags, removed_tags, notes [{at, author, text}],
   checks [{at, changes}], docs [{id, kind: card|pamphlet, photos: [asset ids], added_at, read_at,
-  title, raw, pdf_url, pdf_asset}], created_at, last_checked, next_check (YYYY-MM-DD), progress.
+  title, raw, pdf_url, pdf_asset}], created_at, last_checked, next_check (YYYY-MM-DD), progress,
+  catalog {crawled_at, source, total, with_photos, sections [{id, name, parent_id}], note}.
+- `suppliers/<id>/catalog/<section id>`: the supplier's catalog, one document per section of their
+  site: {name, parent_id ("" for a top section), order, part_of (set when a big section is split
+  across several documents), products [{id, name, sku, details, price, page_url, image_src,
+  sheet, i, n}]}. A product photo is one square of a photo sheet: `sheet` = asset id of a
+  1024x1024 JPEG holding a 4x4 grid of 256x256 photos, `i` = square 0-15 (row by row), `n` = 4.
 
 Every write is `ArtifactData update` (a merge) with `if_version` = the version you last saw for
 that document; each write returns the new version to use next. Arrays you write replace the
@@ -55,6 +61,15 @@ document_title = the title as printed plus any edition, year or product line; co
 if a rep is named; products_mentioned = products or lines on the cover; other_text = anything else
 useful (certifications, promotions with dates).
 
+**Already in the rolodex?** Before writing, compare what you read with every other supplier: the
+same company name (ignoring Inc, LLC, Co, Corp, punctuation), the same website domain, the same email
+domain (not gmail/yahoo/outlook/hotmail), or the same phone number. If one matches, this card belongs
+to that existing supplier: add this doc (read) to the existing supplier's `docs`, apply the rules
+below to the existing supplier instead, and then delete the new supplier's document
+(`ArtifactData delete`; keep its photos, they're now on the existing one), or, if the new document
+still has other unread docs, just remove this doc from it. Never create or flag a duplicate. The
+existing supplier gets status "queued", so step 3 checks it for what's new.
+
 Then update the supplier (one write):
 - company, contact_name, contact_title, phone, email, website, address: set only where the
   supplier's current value is empty (company also when it is "New card").
@@ -73,8 +88,14 @@ With 2 or more suppliers, give each to its own subagent (one supplier each) with
 section, the page URL, the supplier's document and version, the category list and the existing
 tag list; they run in parallel. Research one yourself only when it's the only one.
 
-**Progress**: before each of these five steps, update the supplier with
-`{"progress": {"step": <1-5>, "of": 5, "label": "<step name>"}}`.
+**Progress**: before each of these six steps, update the supplier with
+`{"progress": {"step": <1-6>, "of": 6, "label": "<step name>"}}`.
+
+**Researched before?** When the supplier has `last_checked`, this is a check for new information:
+start from the existing profile, keep what still holds, and look specifically for anything since
+`last_checked`: news, recalls and regulatory actions, certification changes, new or discontinued
+products, price changes, closures or ownership changes. List each in changes_since_last_check (say
+"No changes found" when nothing is new).
 
 1. **Company & catalog**: confirm it is the same business as the card (website, address or
    phone). What they sell to a bakery, categories, locations (HQ, plants, warehouses), service
@@ -139,7 +160,7 @@ minimum_order, locations [{kind, address}], service_area, certifications [{name,
 reviews {summary, sources [urls]}, regulatory [{date, kind, description, source}],
 news [{date, headline, source}], changes_since_last_check [strings], needs_attention (true for a
 recall or warning letter, a lost certification, a closure or acquisition, a website/phone that no
-longer works, or a likely duplicate of another supplier), attention_reason,
+longer works; never for being a possible duplicate), attention_reason,
 sources [urls], brochures [{card_id: the pamphlet's doc id, or "0" for other useful PDFs such as
 catalogs, spec sheets or allergen statements; title; pdf_url: a direct PDF link; summary}],
 tags [{group, name}].
@@ -157,8 +178,52 @@ tags [{group, name}].
 Then delete product photos from the previous research that aren't used any more:
 `Artifact action=delete url=PAGE path=<old image_asset>`.
 
+6. **Catalog** (after saving the research): copy what they sell, organized the way their website
+   organizes it, into `suppliers/<id>/catalog`. See "Catalog" below.
+
 If a company can't be found or researched: update the supplier with {"status": "error",
 "research_error": "<why>", "next_check": tomorrow, "progress": null}.
+
+## Catalog
+
+Mirror their product catalog: every product their website lists, grouped into their own sections
+and subsections (their names, their order). Copy their organization and content, not their design.
+
+1. **Find the product list**, cheapest way first (curl with a normal browser User-Agent, at most
+   about 2 requests a second, and skip anything their robots.txt disallows):
+   - Shopify stores: `<site>/collections.json?limit=250` and `<site>/collections/<handle>/products.json?limit=250&page=N`
+     (or `<site>/products.json?limit=250&page=N`) give sections, products, prices and image URLs.
+   - WooCommerce: `<site>/wp-json/wc/store/v1/products/categories` and `<site>/wp-json/wc/store/v1/products?per_page=100&page=N`.
+   - Otherwise: `<site>/sitemap.xml` (or sitemap_index.xml / robots.txt Sitemap lines) for product and
+     category URLs, and their navigation menu and category pages for the section tree; follow
+     pagination. Read names, item numbers, short descriptions, listed prices and the product photo
+     (og:image or the main product img, as in step 1) from each page.
+   You may write small Python scripts of your own (standard library, plus Pillow for images) to
+   fetch and parse pages; don't run code downloaded from anywhere. Give the crawl up to about 20
+   minutes per supplier; if the catalog is bigger than that allows, keep what you have and say so in
+   catalog.note.
+2. **Photos**: download every product photo, then build photo sheets with Pillow (`pip install
+   pillow` if `python3 -c "import PIL"` fails): fit each photo onto a 256x256 white square (keep its
+   proportions), paste 16 squares row by row onto a 1024x1024 white JPEG (quality 80), and record
+   each product's `sheet` file and square `i`. Reuse: if a product's `image_src` is unchanged from the
+   previous catalog, keep its old sheet and square instead of downloading again (only build new
+   sheets for new or changed photos). Upload sheets up to 25 per call
+   (`Artifact url=PAGE asset=true file_paths=[...]`) and replace each file name with its asset id.
+   Storage: the page holds at most 5,000 files in total; check with `Artifact action=list url=PAGE
+   scope=assets` and keep at least 300 free. If the photos would pass that, give photos first to the
+   sections a bakery is most likely to buy from and leave the rest without (note it in catalog.note).
+3. **Write** one document per section to `suppliers/<id>/catalog` with `ArtifactData batch` (up to 50
+   writes per batch), doc id = a short slug of the section path. A section with more than 400
+   products is split into extra documents with the same name and parent and `part_of` = the first
+   one's id. Products: id (their item/SKU or a slug), name, sku, details (one short line: size,
+   pack, material), price (as listed, with unit; "" if not shown), page_url, image_src (the photo URL
+   you downloaded), sheet, i, n. Delete section documents that no longer exist on their site.
+4. **Summary**: update the supplier with `catalog` = {crawled_at: ts, source: <site or catalog URL>,
+   total: <products>, with_photos: <products with a sheet>, sections: [{id, name, parent_id}] for
+   top-level and second-level sections, note: "" or what was left out}. The profile's `products`
+   highlights may point at catalog photos too (copy their sheet, i, n).
+5. **Clean up**: delete sheet assets that no catalog product uses any more
+   (`Artifact action=delete url=PAGE path=<id>`).
 
 ## 4. Pick up anything added meanwhile
 

@@ -123,7 +123,25 @@ ul.facts { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
 a.product[href]:hover { border-color: var(--accent); }
 .product img { width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; border-radius: 6px; }
 .product .muted { font-size: .8rem; overflow-wrap: anywhere; }
+.catalog-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
+.sections { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 64px); max-height: calc(100vh - 90px); overflow: auto; gap: 2px; padding: 8px; }
+.sec { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: 0; background: none; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
+.sec:hover { background: var(--soft); } .sec.on { background: var(--accent); color: var(--accent-ink); }
+.sec .n { opacity: .7; font-size: .8rem; font-variant-numeric: tabular-nums; }
+button.product { font: inherit; text-align: left; cursor: pointer; }
+.product .price { font-weight: 700; font-size: .85rem; }
+.tile { display: block; aspect-ratio: 1; width: 100%; background-color: #fff; background-repeat: no-repeat; border-radius: 6px; }
+.tile.big, img.big { width: min(100%, 420px); justify-self: center; aspect-ratio: 1; object-fit: contain; background-color: #fff; border-radius: 8px; }
+.noimg { display: grid; place-items: center; aspect-ratio: 1; background: var(--bg); border-radius: 6px; color: var(--muted); font-size: .8rem; }
+.dialog-backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
+.dialog { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+@media (max-width: 700px) {
+  .catalog-layout { grid-template-columns: minmax(0, 1fr); }
+  .sections { position: static; max-height: none; display: flex; flex-direction: row; overflow-x: auto; padding: 6px; }
+  .sec { width: auto; white-space: nowrap; flex: none; }
+}
 .thumbs { display: flex; gap: 6px; margin-top: 6px; overflow: hidden; }
+.thumbs .tile, .thumbs .noimg { width: 52px; height: 52px; flex: none; border: 1px solid var(--line); }
 .thumbs img { width: 52px; height: 52px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 6px; flex: none; }
 .progress { height: 12px; border-radius: 99px; background: var(--card); border: 1px solid var(--line); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .6s ease; min-width: 12px; }
@@ -311,7 +329,18 @@ async function shrink(file) {
     return blob || file;
   } catch { return file; }
 }
-const catalogPhotos = p => (p?.products || []).filter(x => x.image_asset);
+// A catalog photo is either its own file (image_asset) or one square of a photo sheet
+// (sheet: asset id, i: 0-15, n: tiles per side), which lets one stored file carry 16 photos.
+function productImg(p, cls = "") {
+  if (p.sheet) {
+    const n = p.n || 4, col = (p.i || 0) % n, row = Math.floor((p.i || 0) / n);
+    const pos = v => (n > 1 ? (v / (n - 1)) * 100 : 0) + "%";
+    return `<span class="tile ${cls}" role="img" aria-label="${esc(p.name)}" style="background-image:url('${esc(blobUrl(p.sheet))}');background-size:${n * 100}% ${n * 100}%;background-position:${pos(col)} ${pos(row)}"></span>`;
+  }
+  if (p.image_asset) return `<img class="${cls}" src="${esc(blobUrl(p.image_asset))}" alt="${esc(p.name)}" loading="lazy">`;
+  return `<span class="noimg ${cls}">No photo</span>`;
+}
+const catalogPhotos = p => (p?.products || []).filter(x => x.image_asset || x.sheet);
 const blobUrl = id => "/_blob/" + encodeURIComponent(id);
 
 /* ---------- reading a card or pamphlet cover with Claude (in the page) ---------- */
@@ -391,6 +420,39 @@ function back() {
 }
 const canGoBack = () => trail.length > 0 || route().view !== "home";
 
+/* ---------- same company already on file: merge instead of duplicating ---------- */
+const FREE_MAIL = new Set(["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "aol.com", "icloud.com", "live.com", "msn.com", "comcast.net"]);
+const normName = n => low(n).replace(/&/g, " and ").replace(/[^a-z0-9 ]/g, " ")
+  .replace(/\b(inc|llc|l l c|co|corp|corporation|company|ltd|limited|the|usa|us|group|holdings)\b/g, " ").replace(/\s+/g, "");
+const domainOf = u => low(u).replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[\/?#]/)[0];
+const phoneKey = p => String(p || "").replace(/\D/g, "").slice(-10);
+function sameCompany(a, b) {
+  const n1 = normName(a.company), n2 = normName(b.company);
+  if (n1.length > 3 && n1 === n2 && a.company !== PLACEHOLDER) return true;
+  const d1 = domainOf(a.website), d2 = domainOf(b.website);
+  if (d1 && d1 === d2) return true;
+  const e1 = low(a.email).split("@")[1], e2 = low(b.email).split("@")[1];
+  if (e1 && e1 === e2 && !FREE_MAIL.has(e1)) return true;
+  const p1 = phoneKey(a.phone), p2 = phoneKey(b.phone);
+  return p1.length === 10 && p1 === p2;
+}
+async function mergeIfKnown(newId, docId, reading) {
+  // A card for a company already in the rolodex joins that entry (no duplicate), and the entry
+  // is queued so the next analysis checks what's new since it was last researched.
+  const fresh = byId(newId);
+  if (!fresh) return null;
+  const target = S.suppliers.find(x => x.id !== newId && sameCompany(x, reading));
+  if (!target) return null;
+  const doc = (fresh.docs || []).find(d => d.id === docId);
+  if (!doc) return null;
+  const virtual = { ...target, docs: [...(target.docs || []), doc] };
+  await write(target.id, () => supRef(target.id).update(applyReading(virtual, docId, reading)));
+  const others = (fresh.docs || []).filter(d => d.id !== docId);
+  if (others.length) await write(newId, () => supRef(newId).update({ docs: others }));
+  else await write(newId, () => supRef(newId).delete());
+  return target;
+}
+
 /* ---------- views ---------- */
 function route() {
   const h = location.hash.replace(/^#/, "");
@@ -399,6 +461,7 @@ function route() {
   if (h.startsWith("add-")) return { view: "add", id: h.slice(4) };
   if (h === "add") return { view: "add" };
   if (h === "categories") return { view: "categories" };
+  if (h.startsWith("catalog-")) return { view: "catalog", id: h.slice(8) };
   return { view: "home" };
 }
 
@@ -420,6 +483,7 @@ function render() {
   else if (r.view === "edit") renderEdit(r.id);
   else if (r.view === "add") renderAdd(r.id);
   else if (r.view === "categories") renderCategories();
+  else if (r.view === "catalog") renderCatalog(r.id);
   else renderHome();
   if (canGoBack()) {
     const bar = document.createElement("div");
@@ -606,7 +670,7 @@ function renderHome() {
         <a class="item" href="#s-${esc(s.id)}"><span><strong>${esc(s.company)}</strong>${statusTags(s)}</span>
           <span class="muted">${esc((s.categories || []).join(", "))}${s.last_checked ? ` · researched ${esc(s.last_checked.slice(0, 10))}` : ""}</span>
           ${s.summary ? `<span>${esc(s.summary)}</span>` : ""}
-          ${catalogPhotos(s.profile).length ? `<span class="thumbs">${catalogPhotos(s.profile).slice(0, 5).map(x => `<img src="${esc(blobUrl(x.image_asset))}" alt="${esc(x.name)}" title="${esc(x.name)}" loading="lazy">`).join("")}</span>` : ""}
+          ${catalogPhotos(s.profile).length ? `<span class="thumbs">${catalogPhotos(s.profile).slice(0, 5).map(x => productImg(x, "thumb")).join("")}</span>` : ""}
           ${tags.length ? `<span class="mini-tags">${tags.slice(0, 8).map(t => `<span class="mini">${esc(t.name)}</span>`).join("")}${tags.length > 8 ? `<span class="muted">+${tags.length - 8}</span>` : ""}</span>` : ""}
         </a></li>`; }).join("")}</ul>
     ${S.selecting ? `<div class="scanbar" style="flex-wrap:wrap">${S.confirmDelete === "selected"
@@ -729,12 +793,14 @@ function renderSupplier(id) {
     </section>
     ${p.changes_since_last_check?.length ? `<section class="panel"><h2>Changed since the last check</h2><ul class="facts">${p.changes_since_last_check.map(c => `<li>${esc(c)}</li>`).join("")}</ul></section>` : ""}
     ${s.last_checked ? `
-    <section class="panel"><h2>Catalog</h2>
+    <section class="panel"><div class="between"><h2>Catalog</h2>
+      <a class="btn small" href="#catalog-${esc(s.id)}">${s.catalog?.total ? `Browse all ${s.catalog.total.toLocaleString()} products` : "Browse catalog"}</a></div>
+      ${s.catalog?.total ? `<p class="muted" style="margin:0">${plural((s.catalog.sections || []).filter(x => !x.parent_id).length, "section")} · ${(s.catalog.with_photos || 0).toLocaleString()} with photos · copied from their site ${esc((s.catalog.crawled_at || "").slice(0, 10))}</p><h3>Highlights</h3>` : ""}
       ${catalogPhotos(p).length ? `<div class="catalog">${catalogPhotos(p).map(x => `
         <a class="product" ${safeUrl(x.page_url) ? `href="${esc(safeUrl(x.page_url))}" target="_blank" rel="noopener"` : ""}>
-          <img src="${esc(blobUrl(x.image_asset))}" alt="${esc(x.name)}" loading="lazy">
+          ${productImg(x)}
           <strong>${esc(x.name)}</strong>${x.details ? `<span class="muted">${esc(x.details)}</span>` : ""}</a>`).join("")}</div>` : ""}
-      ${(p.products || []).filter(x => !x.image_asset).length ? `<ul class="facts">${(p.products || []).filter(x => !x.image_asset).map(x => `<li>${safeUrl(x.page_url) ? `<a href="${esc(safeUrl(x.page_url))}" target="_blank" rel="noopener"><strong>${esc(x.name)}</strong></a>` : `<strong>${esc(x.name)}</strong>`}${x.details ? ": " + esc(x.details) : ""}</li>`).join("")}</ul>` : ""}
+      ${(p.products || []).filter(x => !x.image_asset && !x.sheet).length ? `<ul class="facts">${(p.products || []).filter(x => !x.image_asset && !x.sheet).map(x => `<li>${safeUrl(x.page_url) ? `<a href="${esc(safeUrl(x.page_url))}" target="_blank" rel="noopener"><strong>${esc(x.name)}</strong></a>` : `<strong>${esc(x.name)}</strong>`}${x.details ? ": " + esc(x.details) : ""}</li>`).join("")}</ul>` : ""}
       ${!p.products?.length ? `<p class="muted" style="margin:0">Nothing found.</p>` : !catalogPhotos(p).length ? `<p class="muted" style="margin:0">No product photos yet; they're collected on the next research.</p>` : ""}
       <h3>Pricing</h3>
       ${p.pricing_summary ? `<p style="margin:0">${esc(p.pricing_summary)}</p>` : ""}
@@ -901,7 +967,12 @@ async function dropAssets(ids) {
 async function deleteSupplier(s) {
   try { await write(s.id, () => supRef(s.id).delete()); }
   catch (e) { handleWriteError(e); return false; }
-  await dropAssets([...(s.docs || []).flatMap(d => [...(d.photos || []), d.pdf_asset]), ...catalogPhotos(s.profile).map(x => x.image_asset)]);
+  let sections = [];
+  try { sections = (await S.db.collection(`suppliers/${s.id}/catalog`).get()).docs.map(d => ({ id: d.id, ...d.data() })); } catch {}
+  const sheetIds = sections.flatMap(x => (x.products || []).flatMap(p => [p.sheet, p.image_asset]));
+  for (const x of sections) { try { await S.db.doc(`suppliers/${s.id}/catalog/${x.id}`).delete(); } catch {} }
+  await dropAssets([...new Set([...(s.docs || []).flatMap(d => [...(d.photos || []), d.pdf_asset]),
+    ...catalogPhotos(s.profile).flatMap(x => [x.image_asset, x.sheet]), ...sheetIds])]);
   return true;
 }
 function confirmRow(key, question, yes) {
@@ -1082,16 +1153,116 @@ async function readInBackground(id, docId, kind, blobs, job) {
   try {
     const reading = cleanReading(await S.sample.json(cardPrompt(kind), { images: blobs, cache: false, modelTier: "quick", signal: ctl.signal }));
     const fresh = byId(id);
+    let merged = null;
     if (fresh && (fresh.docs || []).some(d => d.id === docId && !d.read_at)) {
-      await write(id, () => supRef(id).update(applyReading(fresh, docId, reading)));
+      merged = await mergeIfKnown(id, docId, reading);
+      if (!merged) await write(id, () => supRef(id).update(applyReading(fresh, docId, reading)));
     }
-    if (job) setJob(job, { status: "read", label: reading.company || "" });
+    if (merged) {
+      if (job) setJob(job, { status: "read", label: `${merged.company} (already on file: added to it, checking for new info)`, supplierId: merged.id });
+      else flash("ok", `${merged.company} is already in the rolodex, so this was added to it. The next analysis checks what's new.`);
+      if (route().id === id) navigate("s-" + merged.id, false);
+    } else if (job) setJob(job, { status: "read", label: reading.company || "" });
   } catch (e) {
     if (job) setJob(job, { status: "unread" });
   } finally {
     clearTimeout(timer);
     S.reading.delete(docId); S._keepScroll = true; render();
   }
+}
+
+/* ---------- catalog browser: the supplier's items, organized like their site ---------- */
+const CAT = { sid: null, unsub: null, sections: [], section: "", q: "", shown: 60, open: null };
+function watchCatalog(sid) {
+  if (CAT.sid === sid) return;
+  CAT.unsub?.(); CAT.sid = sid; CAT.sections = []; CAT.section = ""; CAT.q = ""; CAT.shown = 60; CAT.open = null; CAT.loaded = false;
+  CAT.unsub = S.db.collection(`suppliers/${sid}/catalog`).onSnapshot(snap => {
+    CAT.sections = snap.docs.filter(d => d.exists).map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || low(a.name).localeCompare(low(b.name)));
+    CAT.loaded = true; S._keepScroll = true; render();
+  }, () => { CAT.loaded = true; render(); });
+}
+function catalogProducts() {
+  // Parts of one big section share its name and parent; children follow their parent.
+  const ids = new Set();
+  if (CAT.section) {
+    ids.add(CAT.section);
+    let grew = true;
+    while (grew) { grew = false; for (const x of CAT.sections) if (!ids.has(x.id) && ids.has(x.parent_id)) { ids.add(x.id); grew = true; } }
+    for (const x of CAT.sections) if (x.part_of === CAT.section) ids.add(x.id);
+  }
+  const words = low(CAT.q).split(/\s+/).filter(Boolean);
+  const out = [];
+  for (const sec of CAT.sections) {
+    if (CAT.section && !ids.has(sec.id)) continue;
+    for (const p of sec.products || []) {
+      if (words.length && !words.every(w => low(`${p.name} ${p.sku} ${p.details} ${sec.name}`).includes(w))) continue;
+      out.push({ ...p, section: sec.name });
+    }
+  }
+  return out;
+}
+function renderCatalog(sid) {
+  const s = byId(sid);
+  if (!s) { app.innerHTML = `<section class="panel"><p>That supplier isn't in the rolodex.</p></section>`; return; }
+  watchCatalog(sid);
+  const c = s.catalog || {};
+  const tops = CAT.sections.filter(x => !x.parent_id && !x.part_of);
+  const kids = id => CAT.sections.filter(x => x.parent_id === id && !x.part_of);
+  const count = id => { const own = CAT.sections.filter(x => x.id === id || x.part_of === id).reduce((n, x) => n + (x.products || []).length, 0);
+                        return own + kids(id).reduce((n, k) => n + count(k.id), 0); };
+  const list = catalogProducts();
+  const shown = list.slice(0, CAT.shown);
+  const current = CAT.sections.find(x => x.id === CAT.section);
+  const crumbs = [];
+  for (let x = current; x; x = CAT.sections.find(y => y.id === x.parent_id)) crumbs.unshift(x);
+  const sub = current ? kids(current.id) : [];
+  app.innerHTML = `
+    <section class="panel">
+      <div class="between"><div><h1>${esc(s.company)}</h1>
+        <p class="muted" style="margin:4px 0 0">${c.total ? `${c.total.toLocaleString()} products in ${plural(tops.length || (c.sections || []).length, "section")} · ${(c.with_photos || 0).toLocaleString()} with photos · updated ${esc((c.crawled_at || "").slice(0, 10))}` : ""}
+        ${safeUrl(c.source) ? ` · <a href="${esc(safeUrl(c.source))}" target="_blank" rel="noopener">their site</a>` : ""}</p></div>
+        <a class="btn small ghost" href="#s-${esc(s.id)}">Supplier details</a></div>
+      ${c.note ? `<p class="muted" style="margin:0">${esc(c.note)}</p>` : ""}
+      <input type="search" id="cat-q" value="${esc(CAT.q)}" placeholder="Search ${esc(s.company)}'s products, item numbers…" aria-label="Search this catalog">
+    </section>
+    ${!CAT.loaded ? `<p class="loading">Loading the catalog…</p>`
+      : !CAT.sections.length ? `<section class="panel"><p style="margin:0">No catalog yet. It's copied from their website during the next research${S.canWrite !== false ? `: tap <strong>Research again</strong> on the supplier, then <strong>Done adding: analyze now</strong>` : ""}.</p></section>`
+      : `<div class="catalog-layout">
+      <nav class="panel sections" aria-label="Catalog sections">
+        <button class="sec ${CAT.section ? "" : "on"}" data-sec="">All products <span class="n">${(c.total || list.length).toLocaleString()}</span></button>
+        ${tops.map(t => `<button class="sec ${CAT.section === t.id || crumbs[0]?.id === t.id ? "on" : ""}" data-sec="${esc(t.id)}">${esc(t.name)} <span class="n">${count(t.id).toLocaleString()}</span></button>`).join("")}
+      </nav>
+      <section style="display:grid;gap:10px;min-width:0">
+        ${crumbs.length ? `<p class="muted" style="margin:0"><a href="#" data-sec="">All</a>${crumbs.map(x => ` › <a href="#" data-sec="${esc(x.id)}">${esc(x.name)}</a>`).join("")}</p>` : ""}
+        ${sub.length ? `<div class="chips">${sub.map(k => `<button class="chip" data-sec="${esc(k.id)}">${esc(k.name)} <span class="n">${count(k.id)}</span></button>`).join("")}</div>` : ""}
+        <p class="muted" style="margin:0">${list.length.toLocaleString()} ${list.length === 1 ? "product" : "products"}${CAT.q ? ` matching "${esc(CAT.q)}"` : ""}</p>
+        <div class="catalog">${shown.map((p, i) => `<button class="product" data-open="${i}">
+          ${productImg(p)}
+          <strong>${esc(p.name)}</strong>${p.sku ? `<span class="muted">#${esc(p.sku)}</span>` : ""}${p.price ? `<span class="price">${esc(p.price)}</span>` : ""}</button>`).join("")}</div>
+        ${list.length > shown.length ? `<button class="btn ghost" id="more">Show more (${(list.length - shown.length).toLocaleString()} left)</button>` : ""}
+      </section></div>`}
+    ${CAT.open ? productDialog(CAT.open) : ""}`;
+  app.querySelectorAll("[data-sec]").forEach(b => b.addEventListener("click", e => {
+    e.preventDefault(); CAT.section = b.dataset.sec; CAT.shown = 60; render(); window.scrollTo(0, 0);
+  }));
+  const q = app.querySelector("#cat-q"); let t;
+  q?.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { CAT.q = q.value; CAT.shown = 60; S._keepScroll = true; render(); const n = app.querySelector("#cat-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); });
+  app.querySelector("#more")?.addEventListener("click", () => { CAT.shown += 120; S._keepScroll = true; render(); });
+  app.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => { CAT.open = shown[+b.dataset.open]; S._keepScroll = true; render(); }));
+  app.querySelector("#close-product")?.addEventListener("click", () => { CAT.open = null; S._keepScroll = true; render(); });
+  app.querySelector(".dialog-backdrop")?.addEventListener("click", e => { if (e.target === e.currentTarget) { CAT.open = null; S._keepScroll = true; render(); } });
+}
+function productDialog(p) {
+  return `<div class="dialog-backdrop" role="dialog" aria-modal="true" aria-label="${esc(p.name)}"><div class="dialog panel">
+    <div class="between"><span class="muted">${esc(p.section || "")}</span><button class="btn small ghost" id="close-product">Close</button></div>
+    ${p.sheet || p.image_asset ? productImg(p, "big") : ""}
+    <h2>${esc(p.name)}</h2>
+    ${p.sku ? `<p class="muted" style="margin:0">Item # ${esc(p.sku)}</p>` : ""}
+    ${p.price ? `<p style="margin:0"><strong>${esc(p.price)}</strong> <span class="muted">listed on their site</span></p>` : ""}
+    ${p.details ? `<p style="margin:0">${esc(p.details)}</p>` : ""}
+    ${safeUrl(p.page_url) ? `<a class="btn" href="${esc(safeUrl(p.page_url))}" target="_blank" rel="noopener">View on their website</a>` : ""}
+  </div></div>`;
 }
 
 /* ---------- categories ---------- */
@@ -1171,6 +1342,7 @@ function renderCategories() {
 /* ---------- start ---------- */
 setInterval(() => { if (analysisProgress() && !document.hidden && !S.confirmDelete && !document.activeElement?.matches("input, textarea, select")) { S._keepScroll = true; render(); } }, 30000);
 window.addEventListener("hashchange", () => {
+  if (!location.hash.startsWith("#catalog-") && CAT.unsub) { CAT.unsub(); CAT.unsub = null; CAT.sid = null; }
   S.addDirty = false; S.addShown = null;
   if (!skipPush && lastState && lastState.hash !== hashNow()) { trail.push(lastState); if (trail.length > 100) trail.shift(); }
   skipPush = false;
