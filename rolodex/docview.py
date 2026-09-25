@@ -2,6 +2,7 @@
 from the supplier's site on demand. Nothing is saved: the PDF is kept in memory for a few minutes
 while someone reads it, then dropped, so the supplier's current version is always what shows."""
 import io
+import logging
 import threading
 import time
 import urllib.request
@@ -43,20 +44,29 @@ def fetch(url: str) -> bytes | None:
 
 
 def page_count(data: bytes) -> int:
-    import pypdfium2 as pdfium
-    with _pdfium:
-        pdf = pdfium.PdfDocument(data)
-        try:
-            return len(pdf)
-        finally:
-            pdf.close()
+    """Number of pages, or 0 if the PDF can't be read (damaged, password-protected)."""
+    try:
+        import pypdfium2 as pdfium
+        with _pdfium:
+            pdf = pdfium.PdfDocument(data)
+            try:
+                return len(pdf)
+            finally:
+                pdf.close()
+    except Exception:
+        logging.getLogger("rolodex.docview").exception("Couldn't read a PDF")
+        return 0
 
 
 def render(data: bytes, number: int, width: int = 1200) -> bytes | None:
     """Page `number` (1-based) as a PNG about `width` pixels wide, or None if there's no such page."""
-    import pypdfium2 as pdfium
-    with _pdfium:
-        return _render(pdfium, data, number, width)
+    try:
+        import pypdfium2 as pdfium
+        with _pdfium:
+            return _render(pdfium, data, number, width)
+    except Exception:
+        logging.getLogger("rolodex.docview").exception("Couldn't show page %s of a PDF", number)
+        return None
 
 
 def _render(pdfium, data: bytes, number: int, width: int) -> bytes | None:

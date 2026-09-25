@@ -6,7 +6,9 @@ from __future__ import annotations
 import hashlib
 import io
 import ipaddress
+import os
 import socket
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -62,6 +64,14 @@ class _NoPrivateRedirects(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(_NoPrivateRedirects)
 
 
+def _write(path: Path, data: bytes) -> None:
+    """Write whole or not at all: another request may be serving this file right now (a half-written
+    file served with the full file's length is an Internal Server Error)."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
 def fetch_image(url: str, width: int = 0) -> tuple[Path, str] | None:
     """(file, media type) for the photo at url, resized to width (one of SIZES), or None."""
     width = min((s for s in SIZES if s >= width), default=0) if width else 0
@@ -88,7 +98,7 @@ def fetch_image(url: str, width: int = 0) -> tuple[Path, str] | None:
         if len(data) > MAX_BYTES or not _sniff(data):
             failed.touch()
             return None
-        original.write_bytes(data)
+        _write(original, data)
     kind = _sniff(original.read_bytes()[:1000])
     if kind in ("image/svg+xml", "image/gif") or (not width and kind not in ("image/avif", "image/x-icon")):
         return original, kind
@@ -105,7 +115,7 @@ def fetch_image(url: str, width: int = 0) -> tuple[Path, str] | None:
                 img = bg
             buf = io.BytesIO()
             img.convert("RGB").save(buf, "JPEG", quality=82)
-            small.write_bytes(buf.getvalue())
+            _write(small, buf.getvalue())
         except Exception:   # a format this Pillow can't read: the browser gets the original
             return original, kind
     return small, "image/jpeg"
