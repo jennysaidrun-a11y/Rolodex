@@ -7,6 +7,7 @@ import hashlib
 import io
 import ipaddress
 import socket
+import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
@@ -17,7 +18,8 @@ from . import config
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
 MAX_BYTES = 15 * 1024 * 1024
-SIZES = (0, 200, 400, 800)   # 0 = as on their site
+SIZES = (0, 200, 400, 800)
+FAILED_RETRY_SECONDS = 6 * 3600   # 0 = as on their site
 TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"GIF8": "image/gif", b"RIFF": "image/webp"}
 
 
@@ -41,6 +43,8 @@ def _sniff(data: bytes) -> str:
     for magic, kind in TYPES.items():
         if data.startswith(magic):
             return kind
+    if data[4:8] == b"ftyp" and data[8:12] in (b"avif", b"avis", b"mif1", b"msf1"):
+        return "image/avif"   # many sites send AVIF whatever the file is called
     head = data[:300].lstrip().lower()
     if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in data[:1000].lower()):
         return "image/svg+xml"
@@ -64,9 +68,11 @@ def fetch_image(url: str, width: int = 0) -> tuple[Path, str] | None:
     folder.mkdir(parents=True, exist_ok=True)
     key = hashlib.sha256(url.encode()).hexdigest()[:32]
     original = folder / key
-    failed = folder / (key + ".failed")
+    failed = folder / (key + ".failed2")
     if failed.exists():
-        return None
+        if time.time() - failed.stat().st_mtime < FAILED_RETRY_SECONDS:
+            return None
+        failed.unlink(missing_ok=True)   # try again: the site may have been down
     if not original.exists():
         if not _public_host(url):
             return None
@@ -83,8 +89,9 @@ def fetch_image(url: str, width: int = 0) -> tuple[Path, str] | None:
             return None
         original.write_bytes(data)
     kind = _sniff(original.read_bytes()[:1000])
-    if not width or kind in ("image/svg+xml", "image/gif"):
+    if kind in ("image/svg+xml", "image/gif") or (not width and kind != "image/avif"):
         return original, kind
+    width = width or 1600   # AVIF at full size: still turned into a JPEG every browser shows
     small = folder / f"{key}-{width}.jpg"
     if not small.exists():
         try:
