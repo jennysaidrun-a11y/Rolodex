@@ -9,7 +9,9 @@ supplier profiles out, rechecked every 90 days, searchable by keyword, category,
 `suppliers/<id>` documents, `config/categories`, and `config/analysis` (state of the latest
 analysis run: requested/running/done/failed, with a summary). The page's "Done adding: analyze
 now" button fires the routine `trig_01Dq17WHzafvRP6ZmAZvrhb6` (also nightly at 23:07 UTC) through
-the Claude Code Remote connector; that routine clones this repo and follows the analyze skill. `/analyze` and `/find-supplier`
+the Claude Code Remote connector. The routine's prompt is the full text of `routine/analyze.md`
+(self-contained: built-in tools only, no repo clone, no scripts, because unattended sessions refuse
+to run downloaded code). Change that file and the trigger prompt together. `/analyze` and `/find-supplier`
 (`.claude/skills/`) read and write it with ArtifactData, using `tools/analyze.py`, which reuses the
 prompts and schemas in `rolodex/claude.py`. Keep the field names in `artifact/index.html`,
 `tools/analyze.py` and the prompts in step.
