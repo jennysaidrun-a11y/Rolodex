@@ -13,6 +13,8 @@ main() {
   echo $$ > "$pidfile"
   stop_app
   get_updates
+  # every start: make sure what the app needs is installed (quick when it already is)
+  pip install --user -q -r requirements.txt || echo "Couldn't install everything in requirements.txt"
   local running; running=$(code_version)
   start_app
   while sleep "${ROLODEX_CHECK_SECONDS:-60}"; do
@@ -22,7 +24,6 @@ main() {
         echo "New version waiting; restarting after the analysis finishes."
       else
         echo; echo "New version: $(git log --oneline -1). Restarting..."
-        git diff --quiet "$running" -- requirements.txt 2>/dev/null || pip install --user -q -r requirements.txt
         stop_app
         exec bash .devcontainer/start.sh   # the newest copy of this script takes over
       fi

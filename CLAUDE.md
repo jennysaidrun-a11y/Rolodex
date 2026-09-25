@@ -43,6 +43,14 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
   product (`tasks show review` / `tasks save products`: adds specs, datasheets and SDS, photos;
   `db.needs_review`, `catalog.reviewed` < `db.REVIEW_VERSION`). Reviews count as waiting work, so
   "analyze now" and the background loop run them.
+- **Product page tables**: `rolodex/present.py` turns a product's copied text into tables (specs with
+  dimensions first, a sizes / item-numbers table from "Codes and Presentations" lists, documents with
+  safety data sheets first). Documents are never linked out: `rolodex/docview.py` reads the PDF from the
+  supplier's site on demand (memory only, a few minutes) and shows it as page pictures (pypdfium2, one
+  render at a time); only files listed on that product can be viewed.
+- **Photo double-check**: `catalog.check_photos` loads every product photo the way the app shows it,
+  swaps broken ones for the next that works, then `fill_photos` looks again on the product's page; runs
+  after every catalog save and once per `PHOTO_CHECK_VERSION` at app start (`ROLODEX_CHECK_PHOTOS=0` in tests).
 - **Logos**: `rolodex/logos.py` finds each supplier's logo on its site (JSON-LD, header logo image,
   app icon, favicon; English home page for splash pages) after research and once at app start;
   shown next to the name (`logo` macro). `ROLODEX_FETCH_LOGOS=0` in tests.

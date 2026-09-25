@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "_macros.html" import back %}
+{% block title %}{{ d.kind }} · {{ p.name }} · Supplier Rolodex{% endblock %}
+{% block main %}
+{{ back("/supplier/" ~ s.id ~ "/catalog/item/" ~ p.id|urlencode, p.name) }}
+<div class="page-intro">
+  <span class="eyebrow">{{ s.company }} · {{ p.name }}</span>
+  <h1>{{ d.kind }}</h1>
+  <p>{{ [d.language, d.region]|select|join(", ") or "Document" }}{% if pages %} · {{ pages }} page{{ "s" if pages != 1 }}{% endif %}. Read from {{ s.company }}'s site just now, so it's their current version; nothing is saved here.</p>
+</div>
+{% if pages %}
+<div class="doc-pages">
+  {% for n in range(1, pages + 1) %}
+  <figure class="doc-page"><img src="/supplier/{{ s.id }}/doc/{{ index }}/page/{{ n }}?p={{ p.id|urlencode }}" alt="Page {{ n }} of {{ pages }}" loading="{{ 'eager' if n < 3 else 'lazy' }}">
+    <figcaption>Page {{ n }} of {{ pages }}</figcaption></figure>
+  {% endfor %}
+</div>
+{% else %}
+<p class="notice">This document couldn't be opened from {{ s.company }}'s site right now (it may have moved, or isn't a PDF). Try again later{% if d.url|link %}, or <a href="{{ d.url|link }}" target="_blank" rel="noopener">open it on their site</a>{% endif %}.</p>
+{% endif %}
+{% endblock %}

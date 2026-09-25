@@ -19,18 +19,32 @@
     {% if p.sku %}<p class="muted">Item # {{ p.sku }}</p>{% endif %}
     {% if p.price %}<p class="big-price">{{ p.price }}</p><p class="muted">Price as listed on their site; ask the rep for your price.</p>{% endif %}
     {% if p.details %}<p><strong>{{ p.details }}</strong></p>{% endif %}
-    {% if p.description %}<p class="desc">{{ p.description }}</p>{% endif %}
-    {% if p.specs %}
+    {% for b in v.blocks if b.text %}{% if loop.first %}<div class="desc">{% endif %}<p>{{ b.text }}</p>{% if loop.last %}</div>{% endif %}{% endfor %}
+    {% if v.specs %}
     <h3>Specifications</h3>
-    <table class="specs">
-      {% for label, value in p.specs %}<tr><th scope="row">{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}
-    </table>
+    <div class="table-wrap"><table class="specs">
+      {% for label, value in v.specs %}<tr><th scope="row">{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}
+    </table></div>
     {% endif %}
-    {% if p.files %}
-    <h3>Datasheets and documents</h3>
-    <ul class="files">
-      {% for f in p.files if f.url|link %}<li><a href="{{ f.url|link }}" target="_blank" rel="noopener">{{ f.name }}</a></li>{% endfor %}
-    </ul>
+    {% if v.sizes %}
+    <h3>Sizes and item numbers</h3>
+    <div class="table-wrap"><table class="ptable">
+      <thead><tr>{% for h in v.sizes.headers %}<th scope="col">{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for r in v.sizes.rows %}<tr>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+    {% for b in v.blocks if b.points %}
+    <h3>{{ b.heading }}</h3>
+    <ul class="points">{% for x in b.points %}<li>{{ x }}</li>{% endfor %}</ul>
+    {% endfor %}
+    {% if v.docs %}
+    <h3>Safety data sheets and documents</h3>
+    <div class="table-wrap"><table class="ptable docs">
+      <thead><tr><th scope="col">Document</th><th scope="col">Language</th><th scope="col">Region</th><th scope="col"><span class="sr">Open</span>&nbsp;</th></tr></thead>
+      <tbody>{% for d in v.docs %}<tr{% if 'Safety' in d.kind %} class="sds"{% endif %}>
+        <td>{{ d.kind }}</td><td>{{ d.language or "—" }}</td><td>{{ d.region or "—" }}</td>
+        <td><a class="btn small" href="/supplier/{{ s.id }}/doc/{{ d.index }}?p={{ p.id|urlencode }}">View</a></td></tr>{% endfor %}</tbody>
+    </table></div>
     {% endif %}
     <p>{% if p.page_url|link %}<a class="btn" href="{{ p.page_url|link }}" target="_blank" rel="noopener">View on their website</a>{% endif %}
       {% if s.phone %}<a class="btn ghost" href="tel:{{ s.phone.split(' / ')[0] }}">Call {{ s.contact_name or s.company }}</a>{% endif %}</p>
