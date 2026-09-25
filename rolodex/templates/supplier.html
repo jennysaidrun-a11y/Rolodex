@@ -59,8 +59,11 @@
   {% if p.products %}<ul>{% for x in p.products %}<li><strong>{{ x.name }}</strong>{% if x.details %}: {{ x.details }}{% endif %}</li>{% endfor %}</ul>
   {% else %}<p class="muted">Nothing found.</p>{% endif %}
   <h3>Pricing</h3>
-  {% if p.pricing %}<ul>{% for x in p.pricing %}<li>{{ x.item }}: {{ x.price }}{{ src(x.source) }}</li>{% endfor %}</ul>
-  {% else %}<p class="muted">No published pricing. Ask the rep for a quote.</p>{% endif %}
+  {% if p.pricing_summary %}<p>{{ p.pricing_summary }}</p>{% endif %}
+  {% if p.pricing %}<ul>{% for x in p.pricing %}<li>{{ x.item }}: <strong>{{ x.price }}</strong>{% if x.unit %} {{ x.unit }}{% endif %}
+    <span class="tag">{{ {"supplier_price": "their price", "distributor_listing": "distributor", "public_contract": "public contract", "market_benchmark": "market benchmark", "estimate": "estimate"}.get(x.kind, x.kind) }}</span>
+    {% if x.as_of %}<span class="muted">{{ x.as_of }}</span>{% endif %}{{ src(x.source) }}</li>{% endfor %}</ul>
+  {% elif not p.pricing_summary %}<p class="muted">No pricing found yet. Ask the rep for a quote.</p>{% endif %}
   {% if p.stock_and_lead_times %}<h3>Stock &amp; lead times</h3><p>{{ p.stock_and_lead_times }}</p>{% endif %}
   {% if p.minimum_order %}<h3>Minimum order</h3><p>{{ p.minimum_order }}</p>{% endif %}
 </section>

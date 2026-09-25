@@ -18,7 +18,10 @@ CARD = {"document_title": "", "company": "Midwest Flour Co", "contact_name": "Da
 
 RESEARCH = {"business_status": "active", "summary": "Regional flour mill supplying bakeries.",
             "categories": ["Flour & grains"], "products": [{"name": "High-gluten flour", "details": "50 lb bags"}],
-            "pricing": [], "stock_and_lead_times": "", "minimum_order": "1 pallet",
+            "pricing": [{"item": "High-gluten flour, 50 lb (WebstaurantStore)", "price": "$32.99", "unit": "per 50 lb bag",
+                         "kind": "distributor_listing", "source": "https://www.example.com/flour", "as_of": "2026-09"}],
+            "pricing_summary": "Quote only; distributors list about $30-35 per 50 lb bag.",
+            "stock_and_lead_times": "", "minimum_order": "1 pallet",
             "locations": [{"kind": "Mill", "address": "Salina, KS"}], "service_area": "Midwest",
             "certifications": [{"name": "SQF", "status": "current", "source": "https://example.com/sqf"}],
             "reviews": {"summary": "Well regarded.", "sources": []},

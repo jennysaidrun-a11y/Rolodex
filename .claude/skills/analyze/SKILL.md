@@ -31,8 +31,10 @@ due. If both are empty, say so and stop.
 **Progress for the page.** The page shows a progress bar from `config/analysis`. Right after this
 first `plan`, merge in the plan: `ArtifactData update url=PAGE collection=config doc_id=analysis
 data={"planned": <planned_supplier_ids>, "current": ""}` (if the document doesn't exist yet, `set`
-it with `"state": "running"` too). Before starting each supplier (reading or researching), update
-it with `{"current": "<company name>"}`. The bar fills as suppliers finish; you don't count.
+it with `"state": "running"` too). Before starting each supplier (reading or researching), `get` config/analysis:
+**if its state is "cancelled", stop at once** (someone pressed Cancel on the page; don't write to
+config/analysis or anything else). Otherwise update it with `{"current": "<company name>"}`. The
+bar fills as suppliers finish; you don't count.
 
 ## 2. Read each card or pamphlet cover
 
@@ -61,6 +63,10 @@ suppliers you just read are now queued for research.
 python tools/analyze.py show-research work/export <supplier_id>
 ```
 
+- Pricing is required, not optional: follow the pricing rules in `instructions` and come back with
+  real price points (the supplier's own if published, otherwise distributor listings for the same
+  or equivalent products, public contract prices, or market benchmarks), each labeled with its kind,
+  unit, date and source, plus the `pricing_summary`.
 - Follow `instructions`: WebSearch / WebFetch, a source URL for each fact. Never invent prices,
   certifications or dates. Confirm it is the same business as the card. Reuse existing tags.
 - **Pamphlets** (listed in the instructions by card_id): find each one's PDF online (the supplier's

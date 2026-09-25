@@ -172,13 +172,15 @@ const DEFAULT_CATEGORIES = [
 const TAG_GROUPS = ["Product", "Certification", "Capability", "Service area", "Other"];
 const PLACEHOLDER = "New card";
 const RECHECK_DAYS = 90;
+const PRICE_LABELS = { supplier_price: "their price", distributor_listing: "distributor", public_contract: "public contract",
+                       market_benchmark: "market benchmark", estimate: "estimate" };
 // The Claude Code routine that runs /analyze in a fresh cloud session (owner's account).
 const ANALYZE_TRIGGER = "trig_01Dq17WHzafvRP6ZmAZvrhb6";
 const CODE_SERVER = "Claude Code Remote";
 
 /* ---------- state ---------- */
 const S = {
-  db: null, assets: null, sample: null, mcp: null, analysis: null, starting: false, imagesOK: false, canWrite: null, ready: false, dbMissing: false,
+  db: null, assets: null, sample: null, mcp: null, analysis: null, starting: false, cancelling: false, imagesOK: false, canWrite: null, ready: false, dbMissing: false,
   suppliers: [], categoriesDoc: null,
   filters: { q: "", cats: new Set(), tags: new Set(), attention: false },
   selecting: false, selected: new Set(),
@@ -425,6 +427,7 @@ function analysisLine() {
   if (!a) return "";
   if (a.state === "requested" || a.state === "running")
     return `<p class="muted" style="margin:0">Analysis ${a.state === "running" ? "running" : "starting"} (started ${esc(when(a.started_at || a.requested_at))}). Suppliers update here as each one is finished.</p>`;
+  if (a.state === "cancelled") return `<p class="muted" style="margin:0">Last analysis cancelled ${esc(when(a.finished_at))}.</p>`;
   if (a.state === "failed") return `<p class="error" style="margin:0">The last analysis (${esc(when(a.finished_at))}) stopped early: ${esc(a.summary || "no details")}</p>`;
   if (a.state === "done") return `<p class="muted" style="margin:0">Last analysis ${esc(when(a.finished_at))}: ${esc(a.summary || "done")}</p>`;
   return "";
@@ -450,6 +453,9 @@ function progressPanel(p) {
     <div class="progress ${p.total && (p.done || p.state === "running") ? "" : "indeterminate"}" role="progressbar" aria-label="Analysis progress"
       aria-valuemin="0" aria-valuemax="${p.total || 100}" aria-valuenow="${p.done}"><span style="${p.total && (p.done || p.state === "running") ? `width:${pct}%` : ""}"></span></div>
     ${now ? `<p class="muted" style="margin:0">${now}</p>` : ""}
+    ${S.canWrite !== false ? (S.confirmDelete === "cancel-analysis"
+      ? confirmRow("cancel-analysis", "Stop the analysis? Suppliers already finished keep their research; the rest stay waiting for the next run.", "Stop analysis")
+      : `<div><button class="btn small ghost" id="cancel-analysis" ${S.cancelling ? "disabled" : ""}>${S.cancelling ? "Stopping…" : "Cancel analysis"}</button></div>`) : ""}
     ${p.stale ? `<p class="error" style="margin:0">This analysis has been running for over 3 hours and may have stopped. The nightly run will pick up anything left.</p>` : `<p class="muted" style="margin:0">Each supplier's profile fills in as it's finished, a few minutes each. You can keep using the rolodex.</p>`}
   </section>`;
 }
@@ -468,13 +474,38 @@ function waitingBanner() {
     <p class="muted" style="margin:0">Add all your cards first, then tap the button once. It also runs automatically every night.</p>
   </section>`;
 }
+function wireAnalysis() {
+  app.querySelector("#cancel-analysis")?.addEventListener("click", () => { S.confirmDelete = "cancel-analysis"; S._keepScroll = true; render(); });
+  const yes = app.querySelector('[data-yes="cancel-analysis"]');
+  if (yes) yes.addEventListener("click", e => { e.stopImmediatePropagation(); S.confirmDelete = false; cancelAnalysis(); }, { capture: true });
+}
+async function cancelAnalysis() {
+  const sessionId = S.analysis?.session_id;
+  S.cancelling = true; S._keepScroll = true; render();
+  // Mark it first: the analysis checks this before each supplier and stops if it's cancelled.
+  try { await write("__analysis", () => S.db.doc("config/analysis").set({ state: "cancelled", finished_at: nowIso() + "Z",
+    summary: "Cancelled. Suppliers finished before that keep their research; the rest are still waiting." })); } catch (e) { handleWriteError(e); }
+  // Then stop the Claude Code session right away, when we know which one it is.
+  let stopped = !sessionId;
+  if (sessionId && S.mcp) {
+    try { await S.mcp.callTool(CODE_SERVER, "interrupt_session", { session_id: sessionId }); stopped = true; } catch (e) { stopped = false; }
+  }
+  // Anything left mid-research goes back to waiting.
+  for (const x of S.suppliers.filter(x => x.status === "researching")) await updateSupplier(x.id, { status: "queued" });
+  flash(stopped ? "ok" : "notice", stopped ? "Analysis stopped." : "Analysis marked as cancelled; it stops before its next supplier.");
+  S.cancelling = false; S._keepScroll = true; render();
+}
 async function analyzeNow() {
   if (!S.mcp || S.starting) return;
   S.starting = true; S._keepScroll = true; render();
   const planned = S.suppliers.filter(isWaiting).map(s => s.id);
   try { await write("__analysis", () => S.db.doc("config/analysis").set({ state: "requested", requested_at: nowIso() + "Z", planned, current: "" })); } catch {}
   try {
-    await S.mcp.callTool(CODE_SERVER, "fire_trigger", { trigger_id: ANALYZE_TRIGGER });
+    const res = await S.mcp.callTool(CODE_SERVER, "fire_trigger", { trigger_id: ANALYZE_TRIGGER });
+    let out = res?.payload;
+    if (typeof out === "string") { try { out = JSON.parse(out); } catch { out = null; } }
+    const sessionId = out?.session_id || out?.trigger?.session_id;
+    if (sessionId) { try { await write("__analysis", () => S.db.doc("config/analysis").update({ session_id: sessionId })); } catch {} }
     flash("ok", "Analysis started. Each supplier fills in here as it's finished; reading and researching takes a few minutes per supplier.");
   } catch (e) {
     const msg = {
@@ -533,16 +564,18 @@ function renderHome() {
     ${!S.suppliers.length ? `<section class="panel"><p>No suppliers yet. ${S.assets ? `Tap <a href="#add">+ Add</a> and take a photo of the first business card.` : `Ask the owner for Editor access to add business cards.`}</p></section>` : ""}
     <ul class="list ${S.selecting ? "selecting" : ""}">${list.map(s => {
       const tags = effectiveTags(s);
-      const blocked = unreadDocs(s).length || s.status === "researching";
       return `<li>
-        <label class="pick" title="${blocked ? "Not read yet" : "Select for research"}"><input type="checkbox" data-pick="${esc(s.id)}" ${S.selected.has(s.id) ? "checked" : ""} ${blocked ? "disabled" : ""}></label>
+        <label class="pick" title="Select"><input type="checkbox" data-pick="${esc(s.id)}" ${S.selected.has(s.id) ? "checked" : ""}></label>
         <a class="item" href="#s-${esc(s.id)}"><span><strong>${esc(s.company)}</strong>${statusTags(s)}</span>
           <span class="muted">${esc((s.categories || []).join(", "))}${s.last_checked ? ` · researched ${esc(s.last_checked.slice(0, 10))}` : ""}</span>
           ${s.summary ? `<span>${esc(s.summary)}</span>` : ""}
           ${tags.length ? `<span class="mini-tags">${tags.slice(0, 8).map(t => `<span class="mini">${esc(t.name)}</span>`).join("")}${tags.length > 8 ? `<span class="muted">+${tags.length - 8}</span>` : ""}</span>` : ""}
         </a></li>`; }).join("")}</ul>
-    ${S.selecting ? `<div class="scanbar"><label class="check"><input type="checkbox" id="select-all"> Select all</label>
-      <button class="btn" id="scan-selected" ${S.selected.size ? "" : "disabled"}>Research selected${S.selected.size ? ` (${S.selected.size})` : ""}</button></div>` : ""}
+    ${S.selecting ? `<div class="scanbar" style="flex-wrap:wrap">${S.confirmDelete === "selected"
+      ? confirmRow("selected", `Delete ${plural(S.selected.size, "supplier")} with their notes, research and photos? This can't be undone.`, "Yes, delete them")
+      : `<label class="check"><input type="checkbox" id="select-all"> Select all</label>
+      <div class="row"><button class="btn small danger" data-ask="selected" ${S.selected.size ? "" : "disabled"}>Delete${S.selected.size ? ` (${S.selected.size})` : ""}</button>
+      <button class="btn" id="scan-selected" ${S.selected.size ? "" : "disabled"}>Research${S.selected.size ? ` (${S.selected.size})` : ""}</button></div>`}</div>` : ""}
   `;
   // events
   const q = app.querySelector("#q");
@@ -560,18 +593,28 @@ function renderHome() {
   app.querySelectorAll("[data-pick]").forEach(el => el.addEventListener("change", () => { toggle(S.selected, el.dataset.pick); S._keepScroll = true; render(); }));
   const all = app.querySelector("#select-all");
   if (all) {
-    const pickable = list.filter(s => !unreadDocs(s).length && s.status !== "researching").map(s => s.id);
+    const pickable = list.map(s => s.id);
     all.checked = pickable.length > 0 && pickable.every(id => S.selected.has(id));
     all.addEventListener("change", () => { S.selected = new Set(all.checked ? pickable : []); S._keepScroll = true; render(); });
   }
   app.querySelector("#scan-selected")?.addEventListener("click", async () => {
-    const ids = [...S.selected];
+    const ids = [...S.selected].filter(id => { const s = byId(id); return s && !unreadDocs(s).length && s.status !== "researching"; });
     for (const id of ids) await updateSupplier(id, { status: "queued", next_check: today() });
+    const skipped = S.selected.size - ids.length;
     S.selecting = false; S.selected.clear();
-    flash("ok", `${plural(ids.length, "supplier")} queued. Tap "Done adding: analyze now" to research them now, or they're done in tonight's run.`);
+    flash("ok", `${plural(ids.length, "supplier")} queued${skipped ? ` (${skipped} not read yet, so they're already waiting)` : ""}. Tap "Done adding: analyze now" to research them now, or they're done in tonight's run.`);
     render();
   });
   app.querySelector("#analyze-now")?.addEventListener("click", analyzeNow);
+  wireAnalysis();
+  wireConfirm(async key => {
+    if (key !== "selected") return;
+    const doomed = [...S.selected].map(byId).filter(Boolean);
+    let n = 0;
+    for (const x of doomed) if (await deleteSupplier(x)) n++;
+    S.selecting = false; S.selected.clear();
+    flash("ok", `${plural(n, "supplier")} deleted.`);
+  });
   app.querySelector("#ask-form")?.addEventListener("submit", e => { e.preventDefault(); ask(app.querySelector("#ask-q").value.trim()); });
   app.querySelector("#ask-stop")?.addEventListener("click", () => S.ask?.ctl?.abort());
 }
@@ -650,7 +693,11 @@ function renderSupplier(id) {
     <section class="panel"><h2>Products &amp; services</h2>
       ${p.products?.length ? `<ul class="facts">${p.products.map(x => `<li><strong>${esc(x.name)}</strong>${x.details ? ": " + esc(x.details) : ""}</li>`).join("")}</ul>` : `<p class="muted">Nothing found.</p>`}
       <h3>Pricing</h3>
-      ${p.pricing?.length ? `<ul class="facts">${p.pricing.map(x => `<li>${esc(x.item)}: ${esc(x.price)}${src(x.source)}</li>`).join("")}</ul>` : `<p class="muted" style="margin:0">No published pricing. Ask the rep for a quote.</p>`}
+      ${p.pricing_summary ? `<p style="margin:0">${esc(p.pricing_summary)}</p>` : ""}
+      ${p.pricing?.length ? `<ul class="facts">${p.pricing.map(x => `<li>${esc(x.item)}: <strong>${esc(x.price)}</strong>${x.unit ? " " + esc(x.unit) : ""}
+        <span class="tag ${x.kind === "supplier_price" ? "" : "warn"}">${esc(PRICE_LABELS[x.kind] || x.kind || "price")}</span>${x.as_of ? ` <span class="muted">${esc(x.as_of)}</span>` : ""}${src(x.source)}</li>`).join("")}</ul>
+        <p class="muted" style="margin:0">Only "their price" comes from the supplier. The rest are comparable prices to help you judge a quote.</p>`
+        : !p.pricing_summary ? `<p class="muted" style="margin:0">No pricing found yet. It's looked for on the next research; ask the rep for a quote meanwhile.</p>` : ""}
       ${p.stock_and_lead_times ? `<h3>Stock &amp; lead times</h3><p style="margin:0">${esc(p.stock_and_lead_times)}</p>` : ""}
       ${p.minimum_order ? `<h3>Minimum order</h3><p style="margin:0">${esc(p.minimum_order)}</p>` : ""}
     </section>
@@ -680,17 +727,25 @@ function renderSupplier(id) {
         <textarea id="note-text" class="wide" rows="2" required placeholder="Who stopped by, what they offered, quotes, samples…"></textarea>
         <input type="text" id="note-author" placeholder="Your name">
         <button class="btn small">Add note</button></form>` : ""}
-      <ul class="notes">${[...(s.notes || [])].reverse().map(n => `<li><span class="muted">${esc((n.at || "").slice(0, 10))}${n.author ? " · " + esc(n.author) : ""}</span>${esc(n.text)}</li>`).join("") || `<li class="muted">No notes yet.</li>`}</ul>
+      <ul class="notes">${(s.notes || []).map((n, i) => [n, i]).reverse().map(([n, i]) => `<li>
+        <div class="between"><span class="muted">${esc((n.at || "").slice(0, 10))}${n.author ? " · " + esc(n.author) : ""}</span>
+          ${S.canWrite !== false && S.confirmDelete !== "note:" + i ? `<button class="copy" data-ask="note:${i}">Delete</button>` : ""}</div>
+        ${esc(n.text)}${confirmRow("note:" + i, "Delete this note?", "Delete note")}</li>`).join("") || `<li class="muted">No notes yet.</li>`}</ul>
     </section>
     <section class="panel"><div class="between"><h2>Cards &amp; pamphlets</h2>${S.assets ? `<a class="btn small ghost" href="#add-${esc(s.id)}">+ Add</a>` : ""}</div>
       ${[...(s.docs || [])].reverse().map(d => `<div style="display:grid;gap:6px">
-        <p class="muted" style="margin:0">${d.kind === "pamphlet" ? `Pamphlet${d.title ? `: <strong>${esc(d.title)}</strong>` : ""}` : "Business card"} · added ${esc((d.added_at || "").slice(0, 10))}${d.read_at ? "" : " · <strong>not read yet</strong>"}</p>
+        <div class="between"><p class="muted" style="margin:0">${d.kind === "pamphlet" ? `Pamphlet${d.title ? `: <strong>${esc(d.title)}</strong>` : ""}` : "Business card"} · added ${esc((d.added_at || "").slice(0, 10))}${d.read_at ? "" : " · <strong>not read yet</strong>"}</p>
+          ${S.canWrite !== false && S.confirmDelete !== "doc:" + d.id ? `<button class="copy" data-ask="doc:${esc(d.id)}">Delete</button>` : ""}</div>
+        ${confirmRow("doc:" + d.id, `Delete this ${d.kind === "pamphlet" ? "pamphlet and its saved PDF" : "card's photos"}? The supplier and its research stay.`, "Delete")}
         ${d.kind === "pamphlet" && d.read_at ? `<div class="row">${d.pdf_asset ? `<a class="btn small" href="${esc(blobUrl(d.pdf_asset))}" target="_blank">Open PDF</a>` : ""}
           ${safeUrl(d.pdf_url) ? `<a href="${esc(safeUrl(d.pdf_url))}" target="_blank" rel="noopener">${d.pdf_asset ? "Original link" : "PDF online"}</a>` : ""}
           ${!d.pdf_url ? `<span class="muted">PDF version not found yet; it's looked for when the supplier is researched.</span>` : ""}</div>` : ""}
         <div class="photos">${(d.photos || []).map((ph, i) => `<a href="${esc(blobUrl(ph))}" target="_blank"><img src="${esc(blobUrl(ph))}" alt="${d.kind === "pamphlet" ? "Pamphlet cover" : i ? "Back of card" : "Front of card"}" loading="lazy"></a>`).join("")}</div>
       </div>`).join("") || `<p class="muted" style="margin:0">No photos.</p>`}
     </section>
+    ${S.canWrite !== false ? `<section class="panel">${S.confirmDelete === "supplier"
+      ? confirmRow("supplier", `Delete ${esc(s.company)}, its notes, research and photos? This can't be undone.`, "Yes, delete it")
+      : `<div><button class="btn small danger" data-ask="supplier">Delete this supplier</button></div>`}</section>` : ""}
     ${s.checks?.length ? `<section class="panel"><h2>Research history</h2><ul class="facts">${[...s.checks].reverse().map(c => `<li>${esc((c.at || "").slice(0, 10))}${c.changes ? ": " + esc(c.changes) : ""}</li>`).join("")}</ul></section>` : ""}
   `;
   app.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", async () => {
@@ -704,6 +759,21 @@ function renderSupplier(id) {
   }));
   app.querySelectorAll("[data-tagfilter]").forEach(el => el.addEventListener("click", () => { remember(); S.filters = { q: "", cats: new Set(), tags: new Set([el.dataset.tagfilter]), attention: false }; navigate("home", false); }));
   app.querySelector("#analyze-now")?.addEventListener("click", analyzeNow);
+  wireAnalysis();
+  wireConfirm(async key => {
+    if (key === "supplier") {
+      if (await deleteSupplier(s)) { flash("ok", `${s.company} deleted.`); navigate("home", false); }
+    } else if (key.startsWith("note:")) {
+      const i = +key.slice(5);
+      await updateSupplier(s.id, { notes: (s.notes || []).filter((_, j) => j !== i) });
+    } else if (key.startsWith("doc:")) {
+      const d = (s.docs || []).find(x => x.id === key.slice(4));
+      if (d && await updateSupplier(s.id, { docs: (s.docs || []).filter(x => x.id !== d.id) })) {
+        await dropAssets([...(d.photos || []), d.pdf_asset]);
+        flash("ok", d.kind === "pamphlet" ? "Pamphlet deleted." : "Card photos deleted.");
+      }
+    }
+  });
   app.querySelector("#reviewed")?.addEventListener("click", () => updateSupplier(s.id, { needs_attention: false }));
   app.querySelector("#research-now")?.addEventListener("click", async () => {
     if (await updateSupplier(s.id, { status: "queued", next_check: today() })) flash("ok", "Queued. Tap \"Done adding: analyze now\" to research it now, or it's done in tonight's run.");
@@ -775,12 +845,35 @@ function renderEdit(id) {
   app.querySelector("#del-no")?.addEventListener("click", () => { S.confirmDelete = false; render(); });
   app.querySelector("#del-yes")?.addEventListener("click", async () => {
     S.confirmDelete = false;
-    try {
-      await write(s.id, () => supRef(s.id).delete());
-      if (S.assets) for (const d of s.docs || []) for (const a of [...(d.photos || []), d.pdf_asset].filter(Boolean)) { try { await S.assets.delete(a); } catch {} }
-      flash("ok", `${s.company} deleted.`); navigate("home", false);
-    } catch (e) { handleWriteError(e); }
+    if (await deleteSupplier(s)) { flash("ok", `${s.company} deleted.`); navigate("home", false); }
   });
+}
+
+/* ---------- deleting ---------- */
+async function dropAssets(ids) {
+  if (!S.assets) return;
+  for (const a of ids.filter(Boolean)) { try { await S.assets.delete(a); } catch {} }
+}
+async function deleteSupplier(s) {
+  try { await write(s.id, () => supRef(s.id).delete()); }
+  catch (e) { handleWriteError(e); return false; }
+  await dropAssets((s.docs || []).flatMap(d => [...(d.photos || []), d.pdf_asset]));
+  return true;
+}
+function confirmRow(key, question, yes) {
+  return S.confirmDelete === key
+    ? `<div class="confirm"><p class="error" style="margin:0">${question}</p><div class="row">
+        <button type="button" class="btn small danger" data-yes="${esc(key)}">${yes}</button>
+        <button type="button" class="btn small ghost" data-no>Keep</button></div></div>` : "";
+}
+function wireConfirm(onYes) {
+  app.querySelectorAll("[data-ask]").forEach(b => b.addEventListener("click", () => { S.confirmDelete = b.dataset.ask; S._keepScroll = true; render(); }));
+  app.querySelectorAll("[data-no]").forEach(b => b.addEventListener("click", () => { S.confirmDelete = false; S._keepScroll = true; render(); }));
+  app.querySelectorAll("[data-yes]").forEach(b => b.addEventListener("click", async () => {
+    const key = b.dataset.yes;
+    if (key === "cancel-analysis") return; S.confirmDelete = false; b.disabled = true; S._keepScroll = true;
+    await onYes(key); render();
+  }));
 }
 
 function renderAdd(existingId) {

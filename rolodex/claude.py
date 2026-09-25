@@ -62,6 +62,29 @@ def _category_guide(categories: list[dict]) -> str:
         f"- {c['name']}" + (f": {c['description']}" if c.get("description") else "") for c in categories)
 
 
+# Where a price came from, most to least specific to this supplier.
+PRICE_KINDS = ["supplier_price", "distributor_listing", "public_contract", "market_benchmark", "estimate"]
+
+PRICING_GUIDE = (
+    "Pricing is required: the bakery needs a realistic idea of cost before calling the rep. Most B2B "
+    "suppliers don't publish prices, so work outward until you have real numbers, and label each:\n"
+    "- supplier_price: the supplier's own price list, catalog, online store, or prices in their pamphlet PDF\n"
+    "- distributor_listing: the same product or brand (or a close equivalent, named in item) at a "
+    "distributor or online seller: WebstaurantStore, Uline, Grainger, Amazon Business, KaTom, Restaurant "
+    "Depot, Central Restaurant Products, bakery supply shops, their authorized distributors\n"
+    "- public_contract: government or institutional price lists and bid awards (GSA Advantage, state or "
+    "school-district contracts)\n"
+    "- market_benchmark: commodity or index prices for ingredients (USDA AMS market reports, wheat/sugar/"
+    "dairy/egg futures or trade-press prices), or industry rate surveys for services and freight\n"
+    "- estimate: only when nothing above exists; give a range and say what it's based on in item\n"
+    "Give 2-6 entries for their main products or services, each with price, unit (per lb, per case of 1000, "
+    "per 5-gal pail, per hour, per month...), source URL and as_of (YYYY-MM). Never present a distributor, "
+    "benchmark or estimate as the supplier's own price. pricing_summary: one or two sentences on what to "
+    "expect to pay and how this supplier prices (published list, quote only, volume breaks, minimums, "
+    "freight), so the buyer knows what to ask for."
+)
+
+
 def card_schema(categories: list[dict]) -> dict:
     return _schema({
         "company": STR,
@@ -84,7 +107,11 @@ def research_schema(categories: list[dict]) -> dict:
         "summary": STR,
         "categories": _categories_field(categories),
         "products": {"type": "array", "items": _schema({"name": STR, "details": STR})},
-        "pricing": {"type": "array", "items": _schema({"item": STR, "price": STR, "source": STR})},
+        "pricing": {"type": "array", "items": _schema({
+            "item": STR, "price": STR, "unit": STR,
+            "kind": {"type": "string", "enum": PRICE_KINDS},
+            "source": STR, "as_of": STR})},
+        "pricing_summary": STR,
         "stock_and_lead_times": STR,
         "minimum_order": STR,
         "locations": {"type": "array", "items": _schema({"kind": STR, "address": STR})},
@@ -211,7 +238,7 @@ def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | N
            if previous else "This is the first check.\n\n")
         + "Use web search to find and verify, with a source URL for each fact:\n"
         "- what they sell that a bakery would buy (products, brands, services) and the categories that fit\n"
-        "- any published pricing (most suppliers don't publish it; say so rather than inventing numbers)\n"
+        "- pricing, following the pricing rules below\n"
         "- stock, lead times and minimum order, if published\n"
         "- locations (HQ, plants, warehouses) and the area they serve\n"
         "- certifications relevant to food manufacturing (SQF, BRCGS, FSSC 22000, organic, kosher, halal, "
@@ -236,6 +263,7 @@ def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | N
         "lost certification, a closure or acquisition, or a website/phone that no longer works. "
         "The summary is 2-3 sentences on who they are and what they could supply us.\n\n"
         + (_category_guide(categories) + "\n\n" if categories else "")
+        + PRICING_GUIDE + "\n\n"
         + TAG_GUIDE
         + ("\nTags already used in the rolodex (reuse these exact spellings whenever one fits; add a new tag "
            "only for something none of them covers):\n"
