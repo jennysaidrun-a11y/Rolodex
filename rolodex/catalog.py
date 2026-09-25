@@ -493,9 +493,29 @@ def expand(supplier_id: int, minutes: float = 10, depth: int = 2) -> dict:
     return {"expanded": expanded, "added": added, "pages_opened": len(opened)}
 
 
+COMPLETE_VERSION = 1   # raise when complete() learns something new, so existing catalogs get it once
+
+
 def complete(supplier_id: int, minutes: float = 15) -> dict:
     """After any catalog copy: open category pages for the models on them, then find missing photos."""
-    return {"models": expand(supplier_id, minutes * 2 / 3), "photos": fill_photos(supplier_id, minutes / 3)}
+    from . import db
+    res = {"models": expand(supplier_id, minutes * 2 / 3), "photos": fill_photos(supplier_id, minutes / 3)}
+    s = db.get_supplier(supplier_id)
+    db.update_supplier(supplier_id, catalog={**s["catalog"], "completed": COMPLETE_VERSION})
+    return res
+
+
+def complete_outdated() -> None:
+    """Bring catalogs copied before the current complete() up to date (the app runs this once at start)."""
+    from . import db
+    import logging
+    for s in db.all_suppliers():
+        cat = s.get("catalog") or {}
+        if cat.get("total") and cat.get("completed", 0) < COMPLETE_VERSION:
+            try:
+                logging.getLogger("rolodex.catalog").info("Completing %s's catalog: %s", s["company"], complete(s["id"]))
+            except Exception as e:
+                logging.getLogger("rolodex.catalog").warning("Couldn't complete %s's catalog: %s", s["company"], e)
 
 
 def fill_photos(supplier_id: int, minutes: float = 15) -> dict:

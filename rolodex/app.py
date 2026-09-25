@@ -8,6 +8,8 @@ from __future__ import annotations
 import hmac
 import io
 import logging
+import os
+import threading
 import uuid
 from urllib.parse import urlencode
 from contextlib import asynccontextmanager
@@ -48,6 +50,9 @@ async def lifespan(app: FastAPI):
         runner.start_rechecks()
     if config.GIT_SYNC:
         gitsync.start_background()
+    if os.environ.get("ROLODEX_CATALOG_COMPLETE", "1") == "1":
+        from . import catalog
+        threading.Thread(target=catalog.complete_outdated, name="catalog-upgrade", daemon=True).start()
     yield
 
 
