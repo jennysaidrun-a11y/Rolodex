@@ -1,0 +1,28 @@
+{% set run = analysis_progress() %}
+{% set here = request.url.path ~ ("?" ~ request.url.query if request.url.query else "") %}
+<div class="runbar" id="runbar" data-state="{{ run.state }}" {% if run.state != "running" %}hidden{% endif %}>
+  <div class="runbar-inner">
+    <div class="runbar-text"><strong>Analyzing</strong> <span id="run-text">{{ run.done }} of {{ run.total }} suppliers{% if run.current %} · now: {{ run.current }}{% endif %}</span>
+      <span id="run-step" class="muted">{% for x in run.steps %}{{ x.company }}: {{ x.label }} ({{ x.step }}/{{ x.of }}){% if not loop.last %} · {% endif %}{% endfor %}</span></div>
+    <div class="bar"><span id="run-fill" style="width: {{ run.percent }}%"></span></div>
+    <form method="post" action="/analysis/cancel" onsubmit="return confirm('Stop the analysis? Anything not finished stays queued.')">
+      <input type="hidden" name="return_to" value="{{ here }}"><button class="btn small ghost light">Cancel</button></form>
+  </div>
+</div>
+<script>
+(() => {
+  const bar = document.getElementById("runbar");
+  if (!bar || bar.dataset.state !== "running") return;
+  const tick = async () => {
+    try {
+      const r = await (await fetch("/analysis")).json();
+      if (r.state !== "running") { location.reload(); return; }
+      document.getElementById("run-fill").style.width = r.percent + "%";
+      document.getElementById("run-text").textContent = `${r.done} of ${r.total} suppliers` + (r.current ? ` · now: ${r.current}` : "");
+      document.getElementById("run-step").textContent = r.steps.map(x => `${x.company}: ${x.label} (${x.step}/${x.of})`).join(" · ");
+    } catch (e) {}
+    setTimeout(tick, 3000);
+  };
+  setTimeout(tick, 3000);
+})();
+</script>

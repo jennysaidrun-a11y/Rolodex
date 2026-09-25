@@ -1,0 +1,25 @@
+{
+  "name": "Supplier Rolodex",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {}
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "setsid nohup bash .devcontainer/start.sh > /tmp/rolodex.log 2>&1 < /dev/null &",
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "Supplier Rolodex", "onAutoForward": "openBrowser" }
+  },
+  "containerEnv": {
+    "ROLODEX_GIT_SYNC": "1"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["anthropic.claude-code"]
+    },
+    "codespaces": {
+      "openFiles": [".devcontainer/WELCOME.md"]
+    }
+  },
+  "hostRequirements": { "cpus": 2 }
+}

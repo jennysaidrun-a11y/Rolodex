@@ -15,8 +15,20 @@
 <body>
   <header class="top">
     <a class="brand" href="/"><span class="hide-sm">Supplier Rolodex</span><span class="show-sm">Suppliers</span></a>
-    <nav><a class="hide-sm" href="/">Search</a><a href="/categories">Categories</a><a class="btn small" href="/add">+ Add<span class="hide-sm"> card</span></a></nav>
+    <nav><a class="hide-sm" href="/">Suppliers</a><a href="/products">Products</a><a class="hide-sm" href="/categories">Categories</a><a class="btn small" href="/add">+ Add<span class="hide-sm"> card</span></a></nav>
   </header>
-  <main>{% block main %}{% endblock %}</main>
+  {% if not use_api %}{% include "_run.html" %}{% endif %}
+  <main class="{% block wide %}{% endblock %}">
+    {% if request.query_params.get("msg") %}<p class="notice">{{ request.query_params.get("msg") }}</p>{% endif %}
+    {% block main %}{% endblock %}
+  </main>
+  <footer class="foot">
+    {% if git_sync %}{% set st = sync_status() %}
+    <form method="post" action="/sync"><input type="hidden" name="return_to" value="{{ request.url.path }}">
+      <span class="{{ '' if st.ok else 'err-text' }}">{{ st.message }}{% if st.at %} ({{ st.at[11:16] }}){% endif %}</span>
+      <button class="linkish">Save to GitHub now</button></form>
+    {% endif %}
+    <a href="/categories">Categories</a> · <a href="/analysis/log">Last analysis</a>
+  </footer>
 </body>
 </html>

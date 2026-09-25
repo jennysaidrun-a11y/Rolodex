@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import product_card, pager, back %}
+{% block title %}{{ current.name ~ " · " if current }}{{ s.company }} catalog{% endblock %}
+{% block wide %}wide{% endblock %}
+{% macro tree(parent, depth) %}
+  {% for x in sections if x.parent_id == parent %}
+    {% set kids = sections|selectattr("parent_id", "equalto", x.id)|list %}
+    <li class="{{ 'on' if current and current.id == x.id }}">
+      <a href="?section={{ x.id|urlencode }}">{{ x.name }} <span class="n">{{ x.count }}</span></a>
+      {% if kids and depth < 6 and (x.id in open_ids) %}<ul>{{ tree(x.id, depth + 1) }}</ul>{% endif %}
+    </li>
+  {% endfor %}
+{% endmacro %}
+{% block main %}
+{{ back("/supplier/" ~ s.id, s.company) }}
+<div class="store-head">
+  <div>
+    <h1>{{ s.company }} <span class="muted">catalog</span></h1>
+    <p class="muted">{{ s.catalog.total or 0 }} products{% if s.catalog.crawled_at %} · copied from their website {{ s.catalog.crawled_at[:10] }}{% endif %}
+      {% if s.catalog.source|link %} · <a href="{{ s.catalog.source|link }}" target="_blank" rel="noopener">their site</a>{% endif %}</p>
+    {% if s.catalog.note %}<details class="muted note"><summary>About this copy</summary>{{ s.catalog.note }}</details>{% endif %}
+  </div>
+  <form class="store-search" method="get">
+    {% if current %}<input type="hidden" name="section" value="{{ current.id }}">{% endif %}
+    <input type="search" name="q" value="{{ q }}" placeholder="Search {{ current.name if current else 'all products' }}: name or item #">
+    <button class="btn small">Search</button>
+  </form>
+</div>
+
+{% if not sections and not total and not q %}
+<section class="card empty"><p>No catalog yet. It's copied from their website when the supplier is researched
+  (<strong>Research again</strong> on the supplier's page).</p></section>
+{% else %}
+<div class="store">
+  <aside class="store-nav">
+    <details open class="nav-box">
+      <summary>Departments</summary>
+      <ul class="tree">
+        <li class="{{ 'on' if not current }}"><a href="?">All products <span class="n">{{ s.catalog.total or '' }}</span></a></li>
+        {{ tree("", 0) }}
+      </ul>
+    </details>
+  </aside>
+  <div class="store-main">
+    <nav class="crumbs"><a href="?">All products</a>{% for t in trail %} › {% if not loop.last %}<a href="?section={{ t.id|urlencode }}">{{ t.name }}</a>{% else %}<strong>{{ t.name }}</strong>{% endif %}{% endfor %}</nav>
+    {% if children and not q %}
+    <div class="subsections">
+      {% for c in children %}<a class="chip" href="?section={{ c.id|urlencode }}">{{ c.name }} <span class="n">{{ c.count }}</span></a>{% endfor %}
+    </div>
+    {% endif %}
+    <p class="muted">{{ total }} product{{ "s" if total != 1 }}{% if q %} matching “{{ q }}” <a href="?{{ 'section=' ~ current.id|urlencode if current }}">clear</a>{% endif %}</p>
+    <div class="product-grid">
+      {% for p in products %}{{ product_card(p, s.id) }}{% endfor %}
+    </div>
+    {{ pager(page_no, pages, "?" ~ ("section=" ~ current.id|urlencode ~ "&" if current) ~ ("q=" ~ q|urlencode ~ "&" if q)) }}
+  </div>
+</div>
+{% endif %}
+<script>
+// On a phone the department list starts folded once you're inside a section, so products come first.
+if (window.innerWidth < 760 && location.search.includes("section=")) document.querySelector(".nav-box")?.removeAttribute("open");
+</script>
+{% endblock %}

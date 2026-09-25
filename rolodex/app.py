@@ -21,7 +21,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
 
-from . import claude, config, db, recheck
+from . import claude, config, db, gitsync, recheck, runner
+from .images import fetch_image
 
 HERE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -30,6 +31,10 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["without"] = lambda request, key, value: "/?" + urlencode(
     [(k, v) for k, v in request.query_params.multi_items() if not (k == key and v == value)])
 templates.env.globals["use_api"] = config.USE_API
+templates.env.globals["git_sync"] = config.GIT_SYNC
+templates.env.globals["analysis_progress"] = lambda: runner.progress()
+templates.env.globals["sync_status"] = lambda: gitsync.last_result
+templates.env.globals["img"] = lambda url, w=400: ("/img?" + urlencode({"u": url, "w": w})) if str(url).lower().startswith(("http://", "https://")) else ""
 templates.env.filters["link"] = lambda u: u if str(u).lower().startswith(("http://", "https://")) else ""
 
 
@@ -39,6 +44,10 @@ async def lifespan(app: FastAPI):
     db.init()
     if config.USE_API and config.AUTO_RECHECK:
         recheck.start_background()
+    if not config.USE_API and config.AUTO_RECHECK and not runner.available():
+        runner.start_rechecks()
+    if config.GIT_SYNC:
+        gitsync.start_background()
     yield
 
 
@@ -91,24 +100,33 @@ def home(request: Request, q: str = "", category: list[str] = Query([]), attenti
                 selected_categories=category, attention=attention, categories=db.category_list(),
                 selected_tags=tag, tag_counts=db.tag_counts(),
                 filtering=bool(q or category or attention or tag),
-                waiting_cards=len(db.unread_cards()), waiting_scans=len(db.due_for_recheck()),
+                waiting_cards=len(db.unread_cards()), waiting_scans=len(runner.waiting()[1]),
+                run=runner.progress(), can_run=runner.available(),
                 attention_count=len(db.search(attention=True)), total=len(db.all_suppliers()))
 
 
 @app.post("/ask")
 async def ask(request: Request, question: str = Form(...)):
-    if not config.USE_API:
-        return page(request, "ask.html", question=question, answer="", matches=[],
-                    error="Plain-English questions need the Claude API, which isn't set up yet. For now, ask in "
-                          "Claude Code with /find-supplier, or use the keyword, category and tag filters.")
     suppliers = db.all_suppliers()
     by_id = {s["id"]: s for s in suppliers}
     notes = {s["id"]: [n["text"] for n in db.notes_for(s["id"])] for s in suppliers}
-    try:
-        result = await run_in_threadpool(claude.ask, question, suppliers, notes)
-        error = ""
-    except claude.ClaudeError as e:
-        result, error = {"answer": "", "matches": []}, str(e)
+    error = ""
+    if config.USE_API:
+        try:
+            result = await run_in_threadpool(claude.ask, question, suppliers, notes)
+        except claude.ClaudeError as e:
+            result, error = {"answer": "", "matches": []}, str(e)
+    elif not runner.available():
+        try:
+            directory = claude.directory(suppliers, notes, {s["id"]: [x["name"] for x in db.catalog_sections(s["id"])]
+                                                            for s in suppliers})
+            result = await run_in_threadpool(runner.ask, question, directory)
+        except RuntimeError as e:
+            result, error = {"answer": "", "matches": []}, str(e)
+    else:
+        result = {"answer": "", "matches": []}
+        error = ("Plain-English questions need Claude Code (in the Codespace) or the Claude API. "
+                 "Use the keyword, category and tag filters, or /find-supplier in Claude Code.")
     matches = [(by_id[m["supplier_id"]], m["why"]) for m in result["matches"] if m["supplier_id"] in by_id]
     return page(request, "ask.html", question=question, answer=result["answer"], matches=matches, error=error)
 
@@ -129,16 +147,26 @@ def _save_photo(upload: UploadFile) -> str:
 
 
 @app.get("/add")
-def add_form(request: Request, supplier: int | None = None):
-    return page(request, "add.html", supplier=db.get_supplier(supplier) if supplier else None)
+def add_form(request: Request, supplier: int | None = None, added: int = 0):
+    return page(request, "add.html", supplier=db.get_supplier(supplier) if supplier else None, added=added,
+                can_run=runner.available())
 
 
 @app.post("/add")
 async def add_card(request: Request, kind: str = Form("card"), supplier: int | None = Form(None),
-                   front: UploadFile | None = File(None), back: UploadFile | None = File(None)):
+                   front: UploadFile | None = File(None), back: UploadFile | None = File(None),
+                   many: list[UploadFile] = File([]), then: str = Form(""), added: int = Form(0)):
     """A business card (front/back) or a pamphlet (a photo of its cover; research finds the PDF),
-    for a new supplier or one already on file."""
+    for a new supplier or one already on file. `many`: several photos, one company each.
+    then=another goes straight back to the form for the next card."""
     kind = "pamphlet" if kind == "pamphlet" else "card"
+    many = [u for u in many if u is not None and u.filename]
+    if many and not config.USE_API:
+        for u in many:
+            sid = db.create_supplier({"company": recheck.PLACEHOLDER_COMPANY})
+            db.update_supplier(sid, status="unread")
+            db.add_card(sid, [_save_photo(u)], kind)
+        return back_to("/add?" + urlencode({"added": added + len(many)}))
     uploads = [u for u in ([front, back] if kind == "card" else [front]) if u is not None and u.filename]
     if not uploads:
         raise HTTPException(400, "Please add a photo.")
@@ -151,8 +179,10 @@ async def add_card(request: Request, kind: str = Form("card"), supplier: int | N
         supplier_id = db.create_supplier({"company": recheck.PLACEHOLDER_COMPANY})
         db.update_supplier(supplier_id, status="unread")
     card_id = db.add_card(supplier_id, photos, kind)
-    if not config.USE_API:
-        return back_to(f"/supplier/{supplier_id}")   # Claude Code reads it on the next /analyze run
+    if not config.USE_API:   # Claude Code reads it on the next analysis
+        if then == "another":
+            return back_to("/add?" + urlencode({"added": added + 1}))
+        return back_to(f"/supplier/{supplier_id}")
 
     try:
         reading = await run_in_threadpool(claude.read_card, [config.CARDS_DIR / p for p in photos],
@@ -181,7 +211,8 @@ def _get(supplier_id: int) -> dict:
 def supplier(request: Request, supplier_id: int):
     s = _get(supplier_id)
     return page(request, "supplier.html", s=s, p=s["profile"], cards=db.cards_for(supplier_id),
-                notes=db.notes_for(supplier_id), checks=db.checks_for(supplier_id))
+                notes=db.notes_for(supplier_id), checks=db.checks_for(supplier_id),
+                catalog_preview=db.catalog_products(supplier_id, None, "", 8)[0])
 
 
 @app.get("/supplier/{supplier_id}/edit")
@@ -304,3 +335,97 @@ def card_photo(name: str):
     if not path.exists():
         raise HTTPException(404)
     return FileResponse(path)
+
+
+# ---------- analysis by Claude Code (claude-code mode) ----------
+
+@app.get("/analysis")
+def analysis_status():
+    return runner.progress()
+
+
+@app.post("/analysis/start")
+def analysis_start(return_to: str = Form("/")):
+    why = runner.start("button")
+    return back_to(_safe(return_to) + ("" if not why else ("&" if "?" in return_to else "?") + urlencode({"msg": why})))
+
+
+@app.post("/analysis/cancel")
+def analysis_cancel(return_to: str = Form("/")):
+    runner.cancel()
+    return back_to(_safe(return_to))
+
+
+@app.get("/analysis/log")
+def analysis_log(request: Request):
+    return page(request, "log.html", log=runner._log_tail(), run=runner.progress())
+
+
+@app.post("/sync")
+def sync(return_to: str = Form("/")):
+    gitsync.sync_now()
+    return back_to(_safe(return_to))
+
+
+def _safe(path: str) -> str:
+    return path if path.startswith("/") and not path.startswith("//") else "/"
+
+
+# ---------- product catalogs ----------
+
+PER_PAGE = 48
+
+
+@app.get("/img")
+def image(u: str, w: int = 0):
+    """A supplier's product photo, fetched from their site once and then served from the cache."""
+    found = fetch_image(u, w)
+    if found is None:
+        return FileResponse(HERE / "static" / "no-photo.svg", media_type="image/svg+xml",
+                            headers={"Cache-Control": "max-age=3600"})
+    path, media_type = found
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "max-age=2592000"})
+
+
+@app.get("/supplier/{supplier_id}/catalog")
+def catalog_page(request: Request, supplier_id: int, section: str = "", q: str = "", page_no: int = Query(1, alias="page")):
+    s = _get(supplier_id)
+    sections = db.catalog_sections(supplier_id)
+    by_id = {x["id"]: x for x in sections}
+    current = by_id.get(section)
+    ids = db.section_and_below(sections, section) if current else None
+    page_no = max(page_no, 1)
+    products, total = db.catalog_products(supplier_id, ids, q, PER_PAGE, (page_no - 1) * PER_PAGE)
+    trail = []
+    x = current
+    while x and len(trail) < 12:
+        trail.insert(0, x)
+        x = by_id.get(x["parent_id"])
+    children = [x for x in sections if x["parent_id"] == (section if current else "")]
+    return page(request, "catalog.html", s=s, sections=sections, current=current, trail=trail, children=children,
+                products=products, total=total, q=q, page_no=page_no, pages=max(1, -(-total // PER_PAGE)),
+                open_ids={t["id"] for t in trail})
+
+
+@app.get("/supplier/{supplier_id}/catalog/item/{product_id:path}")
+def catalog_item(request: Request, supplier_id: int, product_id: str):
+    s = _get(supplier_id)
+    p = db.catalog_product(supplier_id, product_id)
+    if p is None:
+        raise HTTPException(404, "That product isn't in the catalog any more.")
+    sections = db.catalog_sections(supplier_id)
+    by_id = {x["id"]: x for x in sections}
+    trail, x = [], by_id.get(p["section_id"])
+    while x and len(trail) < 12:
+        trail.insert(0, x)
+        x = by_id.get(x["parent_id"])
+    prev_id, next_id = db.catalog_neighbours(supplier_id, p)
+    return page(request, "product.html", s=s, p=p, trail=trail, prev_id=prev_id, next_id=next_id)
+
+
+@app.get("/products")
+def product_search(request: Request, q: str = "", page_no: int = Query(1, alias="page")):
+    page_no = max(page_no, 1)
+    products, total = db.catalog_products(None, None, q, PER_PAGE, (page_no - 1) * PER_PAGE) if q.strip() else ([], 0)
+    return page(request, "products.html", q=q, products=products, total=total, page_no=page_no,
+                pages=max(1, -(-total // PER_PAGE)))

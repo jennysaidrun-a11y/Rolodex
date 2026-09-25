@@ -1,5 +1,16 @@
 {% extends "base.html" %}
+{% from "_macros.html" import back %}
 {% block main %}
+{{ back("/supplier/" ~ supplier.id if supplier else "/", supplier.company if supplier else "Suppliers") }}
+{% if added %}
+<section class="card narrow added">
+  <p><strong>✓ {{ added }} added.</strong> Snap the next one below, or when you're done:</p>
+  {% if not use_api and not can_run %}
+  <form method="post" action="/analysis/start"><input type="hidden" name="return_to" value="/">
+    <button class="btn">Done adding: analyze now</button></form>
+  {% else %}<a class="btn" href="/">Done</a>{% endif %}
+</section>
+{% endif %}
 <section class="card narrow">
   <h1>{% if supplier %}Add to {{ supplier.company }}{% else %}Add a supplier{% endif %}</h1>
   <form method="post" action="/add" enctype="multipart/form-data" id="add-form">
@@ -18,13 +29,31 @@
     <p class="muted" data-kind="pamphlet" hidden>Just the cover. Claude finds the full PDF version online
       (usually on the supplier's website) and saves a copy with the supplier.</p>
 
-    <button class="btn big">{% if use_api %}Read it{% else %}Save{% endif %}</button>
+    <input type="hidden" name="added" value="{{ added }}">
+    {% if use_api %}<button class="btn big">Read it</button>
+    {% else %}
+    <button class="btn big" name="then" value="another">Save &amp; add another</button>
+    <button class="btn ghost big" name="then" value="">Save &amp; open it</button>
+    {% endif %}
   </form>
+  {% if not use_api and not supplier %}
+  <details class="many">
+    <summary>Several at once (photos from your library)</summary>
+    <form method="post" action="/add" enctype="multipart/form-data">
+      <input type="hidden" name="added" value="{{ added }}">
+      <p class="muted">Pick photos of several business cards or pamphlet covers, one company per photo.</p>
+      <label class="photo">Photos <input type="file" name="many" accept="image/*" multiple required></label>
+      <div class="kind-switch"><label><input type="radio" name="kind" value="card" checked> Business cards</label>
+        <label><input type="radio" name="kind" value="pamphlet"> Pamphlet covers</label></div>
+      <button class="btn big">Add them all</button>
+    </form>
+  </details>
+  {% endif %}
   <p class="muted">Tip: lay it flat on a dark surface and fill the frame. You can take a photo or choose one
     from your phone's library.
     {% if use_api %}Claude reads it in a few seconds; you check the details, then it researches the company.
-    {% else %}Photos are saved now. Claude Code reads them and researches the company the next time someone runs
-    <strong>/analyze</strong>.{% endif %}</p>
+    {% else %}Photos are saved right away. When you've added them all, tap <strong>Done adding: analyze now</strong>
+    and Claude reads them, researches each company and copies its catalog.{% endif %}</p>
 </section>
 <script>
 (() => {
@@ -35,8 +64,11 @@
     if (kind !== "card") form.querySelector("input[name=back]").value = "";
   };
   form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
-  form.addEventListener("submit", () => {
-    const b = form.querySelector("button"); b.disabled = true;
+  form.addEventListener("submit", (e) => {
+    const b = e.submitter || form.querySelector("button");
+    // Keep the pressed button's value (disabling it would drop it from the form).
+    if (b.name) { const h = document.createElement("input"); h.type = "hidden"; h.name = b.name; h.value = b.value; form.append(h); }
+    form.querySelectorAll("button").forEach(x => x.disabled = true);
     b.textContent = "{{ 'Reading…' if use_api else 'Saving…' }}";
   });
   show();

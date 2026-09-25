@@ -1,13 +1,24 @@
 {% extends "base.html" %}
 {% block main %}
-{% if not use_api and (waiting_cards or waiting_scans) %}
-<p class="notice">Waiting for Claude Code: {% if waiting_cards %}{{ waiting_cards }} card/pamphlet{{ "s" if waiting_cards != 1 }} to read{% endif %}{% if waiting_cards and waiting_scans %}, {% endif %}{% if waiting_scans %}{{ waiting_scans }} supplier{{ "s" if waiting_scans != 1 }} to scan{% endif %}.
-  Run <strong>/analyze</strong> in Claude Code on the rolodex computer.</p>
+{% if not use_api %}
+{% if run.state in ("done", "failed", "cancelled") and run.summary %}
+<p class="{{ 'error' if run.state == 'failed' else 'notice' }}">Last analysis ({{ run.finished_at.replace("T", " ")[:16] if run.finished_at }}): {{ run.summary }}
+  <a href="/analysis/log">Details</a></p>
 {% endif %}
-{% if use_api %}
+{% if (waiting_cards or waiting_scans) and run.state != "running" %}
+<section class="card analyze-box">
+  <p><strong>Waiting:</strong> {% if waiting_cards %}{{ waiting_cards }} card/pamphlet{{ "s" if waiting_cards != 1 }} to read{% endif %}{% if waiting_cards and waiting_scans %}, {% endif %}{% if waiting_scans %}{{ waiting_scans }} supplier{{ "s" if waiting_scans != 1 }} to research{% endif %}.</p>
+  {% if not can_run %}
+  <form method="post" action="/analysis/start"><input type="hidden" name="return_to" value="/">
+    <button class="btn">Done adding: analyze now</button></form>
+  {% else %}<p class="muted">{{ can_run }} Run <strong>/analyze</strong> in Claude Code in this folder.</p>{% endif %}
+</section>
+{% endif %}
+{% endif %}
+{% if use_api or not can_run %}
 <section class="card">
   <h2>Ask Claude</h2>
-  <form method="post" action="/ask" class="ask" onsubmit="this.querySelector('button').textContent='Thinking…'">
+  <form method="post" action="/ask" class="ask" onsubmit="this.querySelector('button').textContent='Thinking… (up to a minute)'">
     <textarea name="question" rows="2" required
       placeholder="e.g. Who can supply compostable bread bags, SQF certified, delivering to us?"></textarea>
     <button class="btn">Ask</button>

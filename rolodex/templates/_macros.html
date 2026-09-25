@@ -1,0 +1,21 @@
+{% macro product_card(p, sid) %}
+<a class="product" href="/supplier/{{ sid }}/catalog/item/{{ p.id|urlencode }}">
+  <span class="pimg">{% if img(p.image_url) %}<img src="{{ img(p.image_url, 400) }}" alt="" loading="lazy">{% else %}<img src="/static/no-photo.svg" alt="">{% endif %}</span>
+  <span class="pname">{{ p.name }}</span>
+  {% if p.sku %}<span class="psku">#{{ p.sku }}</span>{% endif %}
+  {% if p.details %}<span class="pdetails">{{ p.details }}</span>{% endif %}
+  {% if p.price %}<span class="pprice">{{ p.price }}</span>{% endif %}
+</a>
+{% endmacro %}
+
+{% macro pager(page_no, pages, base) %}
+{% if pages > 1 %}
+<nav class="pager" aria-label="Pages">
+  {% if page_no > 1 %}<a class="btn small ghost" href="{{ base }}page={{ page_no - 1 }}">‹ Previous</a>{% endif %}
+  <span class="muted">Page {{ page_no }} of {{ pages }}</span>
+  {% if page_no < pages %}<a class="btn small ghost" href="{{ base }}page={{ page_no + 1 }}">Next ›</a>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
+
+{% macro back(href, label="Back") %}<a class="back" href="{{ href }}" onclick="if (history.length > 1 && document.referrer.startsWith(location.origin)) { history.back(); return false; }">‹ {{ label }}</a>{% endmacro %}

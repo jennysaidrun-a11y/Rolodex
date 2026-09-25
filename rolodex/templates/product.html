@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_macros.html" import back %}
+{% block title %}{{ p.name }} · {{ s.company }}{% endblock %}
+{% block wide %}wide{% endblock %}
+{% block main %}
+{{ back("/supplier/" ~ s.id ~ "/catalog" ~ ("?section=" ~ p.section_id|urlencode if p.section_id), "Catalog") }}
+<nav class="crumbs"><a href="/supplier/{{ s.id }}">{{ s.company }}</a> › <a href="/supplier/{{ s.id }}/catalog">Catalog</a>{% for t in trail %} › <a href="/supplier/{{ s.id }}/catalog?section={{ t.id|urlencode }}">{{ t.name }}</a>{% endfor %}</nav>
+<section class="card product-page">
+  <div class="gallery">
+    {% set photos = ([p.image_url] if p.image_url else []) + p.images %}
+    <a class="main-photo" href="{{ img(photos[0], 0) if photos else '#' }}" target="_blank" id="main-link">
+      <img id="main-photo" src="{{ img(photos[0], 800) if photos else '/static/no-photo.svg' }}" alt="{{ p.name }}"></a>
+    {% if photos|length > 1 %}
+    <div class="thumbs">{% for u in photos if img(u) %}<button type="button" data-big="{{ img(u, 800) }}" data-full="{{ img(u, 0) }}"><img src="{{ img(u, 200) }}" alt="Photo {{ loop.index }}" loading="lazy"></button>{% endfor %}</div>
+    {% endif %}
+  </div>
+  <div class="info">
+    <h1>{{ p.name }}</h1>
+    {% if p.sku %}<p class="muted">Item # {{ p.sku }}</p>{% endif %}
+    {% if p.price %}<p class="big-price">{{ p.price }}</p><p class="muted">Price as listed on their site; ask the rep for your price.</p>{% endif %}
+    {% if p.details %}<p><strong>{{ p.details }}</strong></p>{% endif %}
+    {% if p.description %}<p class="desc">{{ p.description }}</p>{% endif %}
+    <p>{% if p.page_url|link %}<a class="btn" href="{{ p.page_url|link }}" target="_blank" rel="noopener">View on their website</a>{% endif %}
+      {% if s.phone %}<a class="btn ghost" href="tel:{{ s.phone.split(' / ')[0] }}">Call {{ s.contact_name or s.company }}</a>{% endif %}</p>
+    <p class="prevnext">{% if prev_id %}<a href="/supplier/{{ s.id }}/catalog/item/{{ prev_id|urlencode }}">‹ Previous item</a>{% endif %}
+      {% if next_id %}<a href="/supplier/{{ s.id }}/catalog/item/{{ next_id|urlencode }}">Next item ›</a>{% endif %}</p>
+  </div>
+</section>
+<script>
+document.querySelectorAll(".thumbs button").forEach(b => b.addEventListener("click", () => {
+  document.getElementById("main-photo").src = b.dataset.big;
+  document.getElementById("main-link").href = b.dataset.full;
+}));
+</script>
+{% endblock %}

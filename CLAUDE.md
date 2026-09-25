@@ -1,39 +1,44 @@
 # Supplier Rolodex
 
 Supplier rolodex for a commercial bakery: business-card and pamphlet-cover photos in, researched
-supplier profiles out, rechecked every 90 days, searchable by keyword, category, tag or question.
+supplier profiles and a copy of each supplier's product catalog out, rechecked every 90 days,
+searchable by keyword, category, tag, product or question.
 
-**The live app is a claude.ai page: https://claude.ai/artifact/L1xZMaHagpDhwLrykRnxF2**
-(source `artifact/index.html`, one self-contained file; publish updates with the Artifact tool,
-`url` above, keeping its capabilities db, assets, sample, user). Its data is the page's database:
-`suppliers/<id>` documents, `config/categories`, and `config/analysis` (state of the latest
-analysis run: requested/running/done/failed, with a summary). The page's "Done adding: analyze
-now" button fires the routine `trig_01Dq17WHzafvRP6ZmAZvrhb6` (also nightly at 23:07 UTC) through
-the Claude Code Remote connector. The routine's prompt is the full text of `routine/analyze.md`
-(self-contained: built-in tools only, no repo clone, no scripts, because unattended sessions refuse
-to run downloaded code). Change that file and the trigger prompt together. `/analyze` and `/find-supplier`
-(`.claude/skills/`) read and write it with ArtifactData, using `tools/analyze.py`, which reuses the
-prompts and schemas in `rolodex/claude.py`. Keep the field names in `artifact/index.html`,
-`tools/analyze.py` and the prompts in step.
+**It runs in a GitHub Codespace** (`.devcontainer/`): the Python app (`rolodex/`, FastAPI / SQLite /
+Jinja, no JS build step, must stay usable on a phone) on port 8000, with Claude Code installed and
+signed in. The company computer can't install anything, so everything is used through the browser.
 
-The Python app (`rolodex/`, self-hosted, optional) is the same product on a server:
-
-- Python / FastAPI / SQLite / Jinja; no JS build step. Must stay usable on a phone.
-- Two analysis modes (`config.ANALYSIS`): `api` (the app calls Claude) and `claude-code` (the app
-  only stores photos and queues; the `/analyze` skill does the work through `rolodex/tasks.py`).
-  Both use the same prompts and schemas from `claude.py` (`card_prompt`, `research_prompt`,
-  `card_schema`, `research_schema`) and the same save path (`recheck.save_reading`, `save_research`).
+- **Analysis** (`config.ANALYSIS = "claude-code"`, the default without an API key): the app starts
+  Claude Code headless (`rolodex/runner.py`, `claude -p` with a fixed `--allowedTools` list) for
+  "Done adding: analyze now" and for due rechecks while it runs. Claude Code follows
+  `.claude/skills/analyze/SKILL.md`, which works only through `python -m rolodex.tasks` and
+  `python -m rolodex.catalog`, and reports progress with `tasks begin/current/progress/finish`
+  (the `analysis` table and `suppliers.progress` drive the progress bar; Cancel kills the process
+  group). **Ask Claude** also goes through `runner.ask` (directory JSON on stdin). `api` mode calls the
+  Claude API from `rolodex/claude.py` instead.
+- Prompts and schemas for reading and research live in `rolodex/claude.py` (`card_prompt`,
+  `research_prompt`, `card_schema`, `research_schema`), shared by both modes; saving goes through
+  `recheck.save_reading` / `save_research`. If you add a profile field, add it to the research
+  schema, `supplier.html` and `claude.directory`.
+- **Repeat cards** never create duplicates: `tasks save card` merges a card whose company matches an
+  existing supplier (`db.possible_duplicates`: name without Inc/LLC, website or company-email domain,
+  phone) into it and queues that supplier for a "what's new since last_checked" check.
+- **Catalogs**: `catalog_sections` / `catalog_products` tables, replaced whole by `db.save_catalog`.
+  Photos are stored as URLs on the supplier's site and served through `/img` (`rolodex/images.py`:
+  public hosts only, cached in `data/cache/img`, resized). `rolodex/catalog.py` crawls Shopify,
+  WooCommerce and sitemap + JSON-LD/microdata sites, and `photos <id>` fills missing photos from
+  product pages; anything else Claude builds by hand per the skill.
+- **Data**: `data/rolodex.db` (live, not in git) is copied to `data/rolodex-backup.db` and committed
+  with `data/cards/` and `data/docs/` by `rolodex/gitsync.py` (every few minutes in a Codespace).
+  `db.init()` restores from the backup on a fresh checkout. Don't commit `data/rolodex.db` or `data/cache/`.
 - "Cards" rows are business cards or pamphlets (`kind`), with any number of photos; `read_at` is
   NULL until read. Suppliers created from an unread photo have status `unread`.
-- All Claude calls live in `rolodex/claude.py` and use structured outputs (JSON schemas there).
-  If you add a profile field, add it to `RESEARCH_SCHEMA`, the supplier page, and `_directory`.
-- Categories: a managed list (`category_list` table, seeded from `db.DEFAULT_CATEGORIES`, edited on
-  /categories). Card reading and research build their JSON-schema enum from it (`claude.card_schema`,
-  `research_schema`). Filter semantics: categories match ANY, tags match ALL. Research only adds
-  categories on a supplier's first check.
-- Tags: research returns `tags` [{group, name}] (groups in `db.TAG_GROUPS`) and is shown the
-  existing vocabulary to reuse; `db.clean_tags` snaps spellings. Staff tags and removed tags are
-  stored separately so rescans never undo staff edits (`db.effective_tags`).
-- Research facts need a source URL; never invent pricing. Links from research are rendered
-  only if http(s) (`link` filter).
-- Run `pytest` before committing; tests stub Claude, so no API key is needed.
+- Categories: a managed list (`category_list` table). Filter semantics: categories match ANY, tags
+  match ALL. Research only adds categories on a supplier's first check. Tags: research tags plus
+  staff tags and removed tags stored separately so rescans never undo staff edits.
+- Research facts need a source URL; never invent pricing. Links from research are rendered only if
+  http(s) (`link` filter).
+- Run `pytest` before committing; tests stub Claude (fake `claude` scripts for the runner).
+
+`artifact/` (the earlier claude.ai page) and `routine/` (its cloud routine) are retired; their data
+was imported with `tools/import_artifact.py`.

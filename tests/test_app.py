@@ -41,6 +41,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "rolodex.db")
     monkeypatch.setattr(config, "CARDS_DIR", tmp_path / "cards")
     monkeypatch.setattr(config, "DOCS_DIR", tmp_path / "docs")
+    monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(config, "BACKUP_PATH", tmp_path / "rolodex-backup.db")
+    monkeypatch.setattr(config, "GIT_SYNC", False)
+    monkeypatch.setattr(config, "CLAUDE_COMMAND", "no-such-claude-command")
     monkeypatch.setattr(config, "APP_PASSWORD", "")
     monkeypatch.setattr(config, "AUTO_RECHECK", False)
     monkeypatch.setattr(config, "USE_API", True)
@@ -293,7 +297,7 @@ def test_claude_code_mode_cards_pamphlets_and_research(client, monkeypatch, caps
     sid = int(r.headers["location"].split("/")[2])
     assert db.get_supplier(sid)["status"] == "unread"
     assert "waiting to be read" in client.get(f"/supplier/{sid}").text
-    assert "Waiting for Claude Code: 1 card/pamphlet to read" in client.get("/").text
+    assert "1 card/pamphlet to read" in client.get("/").text
     assert "Ask Claude" not in client.get("/").text
 
     ok, pending = run_tasks(capsys, "list")
@@ -355,7 +359,7 @@ def test_claude_code_mode_cards_pamphlets_and_research(client, monkeypatch, caps
 
     ok, directory = run_tasks(capsys, "directory")
     assert directory[0]["company"] == "Midwest Flour Co"
-    assert "need the Claude API" in client.post("/ask", data={"question": "flour?"}).text
+    assert "need Claude Code" in client.post("/ask", data={"question": "flour?"}).text
 
 
 def test_pamphlet_read_by_api(client, monkeypatch):

@@ -1,88 +1,58 @@
 # Supplier Rolodex
 
 The box of business cards, made searchable. Snap a rep's business card, or the front cover of a
-pamphlet, on your phone. Claude reads it and researches the company, building a profile: what they
-supply, pricing, stock and lead times, locations, certifications, reviews, recalls and other
-regulatory history, news, and the pamphlet's PDF, each with a source link. Profiles are rechecked
-every 3 months, and anything that changed (a recall, a lost certification, a closure) is flagged
-**Needs attention**. Find suppliers by keyword, category and tags, or ask in plain English.
+pamphlet, on your phone. Claude reads it and researches the company: what they supply, pricing,
+stock and lead times, locations, certifications, reviews, recalls and other regulatory history,
+news, and the pamphlet's PDF, each with a source link. It also copies the supplier's **product
+catalog** from their website, so you can browse it like their online store (their departments and
+sections, every product with photos, item numbers and listed prices), and search every supplier's
+products at once. Profiles are rechecked every 3 months for anything new, and anything that
+changed (a recall, a lost certification, a closure) is flagged **Needs attention**. Find suppliers
+by keyword, category and tags, or ask in plain English.
 
-## The rolodex: https://claude.ai/artifact/L1xZMaHagpDhwLrykRnxF2
+## Where it runs: a GitHub Codespace
 
-It's a page on claude.ai. Nothing to install: open it in the browser on any computer or phone,
-signed in to Claude. (Source: `artifact/index.html`.)
+Nothing to install on the company computer. The app runs in a **Codespace**, a computer in the cloud
+that GitHub runs for this repository, and you use it in the browser, on any computer or phone.
 
-- **Sharing**: use the page's Share menu. People who add cards and pamphlets need **Editor**;
-  **Contributor** can edit details, add notes and tags; **Viewer** can search.
-- **+ Add** works as a queue: snap a business card (front, and back if needed) or a pamphlet
-  cover, tap **Add to queue**, and the form is ready for the next one while it uploads and Claude
-  reads it in the background. **Several at once** takes many library photos, one company each.
-  The batch list shows each one's progress; **Done: analyze all** researches the whole batch.
-- **Research** (web lookups, the pamphlet's PDF, the 3-month rechecks) is done by Claude Code in the
-  cloud. When you've added your cards, tap **Done adding: analyze now**: it starts a Claude Code
-  session (the routine "Rolodex: analyze new cards and rechecks", `trig_01Dq17WHzafvRP6ZmAZvrhb6`)
-  that reads anything not read yet, researches every supplier that's queued or due, saves PDFs and
-  writes the results back; the page shows it running and a one-line summary when it's done. The
-  same routine also runs every night at 23:07 UTC, so nothing waits if nobody taps the button.
-  The button works for the page owner's account; for everyone else the nightly run covers it.
-  (You can also type **`/analyze`** in a claude.ai/code session on this repo.)
-- **Catalog**: research collects 6-15 product photos from each supplier's own site (catalog, shop
-  or product pages) with names, details and links, saved into the rolodex. Each supplier's page
-  shows them as a grid, and the list shows a few thumbnails, so you can see what they make.
-  Suppliers researched before this was added get photos on their next research (**Research again**).
-- **Research again**: on a supplier's page, or **Select** several in the list and **Research
-  selected**; they're done on the next analysis.
-- **Categories** (top menu) and **tags** filter the list: categories match any you pick, tags must
-  all match. Staff edits to categories and tags survive rechecks.
-- **Ask about your suppliers** on the page answers questions from what's on file
-  (`/find-supplier` does the same in Claude Code).
+**Open it:** https://github.com/codespaces, then this repository's codespace, or the first time:
+the repository page, green **Code** button, **Codespaces** tab, **Create codespace on main**.
+It opens VS Code in the browser and starts the app by itself. Go to the **Ports** tab (bottom
+panel), port **8000** "Supplier Rolodex", and click the globe icon to open the app. That address
+works on your phone too once you're signed in to GitHub there; add it to your home screen.
 
-## Self-hosted version (optional)
+**First time only: sign in Claude Code.** In the Codespace open a terminal (Terminal menu, New
+Terminal), type `claude`, follow the sign-in link with your Claude account, then type `/exit`.
+Claude Code then does the reading, research and catalog copying when you tap **Done adding:
+analyze now**, answers **Ask Claude** questions, and runs the 3-month rechecks while the app is open.
+(Once there's an API key, add `ANTHROPIC_API_KEY` as a Codespaces secret for this repository and
+Claude Code uses it instead.)
 
-The Python app below does the same job on a company server (for when there's an API key and a
-server to run it on). It isn't needed for the claude.ai page.
+- **Your data is saved to GitHub**: the database copy (`data/rolodex-backup.db`), card photos
+  (`data/cards/`) and pamphlet PDFs (`data/docs/`) are committed to this repository every few
+  minutes and right after each analysis (the note at the bottom of every page says when; **Save to
+  GitHub now** does it immediately). A new or rebuilt Codespace starts from that copy, so a stopped
+  or deleted Codespace loses nothing.
+- **Catalog photos** aren't stored in the repository: the app shows them from the supplier's site
+  and keeps a copy in `data/cache/`, fetching any it doesn't have again.
+- **It sleeps when idle.** A Codespace stops after 30 minutes with nobody typing in it (the app with
+  it). Start it again from https://github.com/codespaces. Set **Default idle timeout** to 240
+  minutes at https://github.com/settings/codespaces so an analysis has time to finish.
+- **Cost:** personal GitHub accounts get 120 core-hours a month free (60 hours of this 2-core
+  Codespace) and 15 GB of storage. A stopped Codespace uses no hours.
+- **Who can open it:** the app's address is private to your GitHub account by default. To let a
+  coworker in, add them to the repository, or in the Ports tab set port 8000 to **Public** and set
+  `APP_PASSWORD` (a Codespaces secret) so the page asks for a password.
 
-## What it runs on
+The Codespace setup is in `.devcontainer/` (Python 3.12, Node and Claude Code; `start.sh` pulls the
+latest code and data and keeps the app running on port 8000; the log is `/tmp/rolodex.log`).
 
-- One computer on the company system (Windows or Linux) runs the app and keeps the data:
-  `data/rolodex.db` (one file), `data/cards/` (the photos) and `data/docs/` (saved pamphlet PDFs). **Back up the `data` folder.**
-- Phones and other computers open it in a browser. On a phone, use **Add to Home Screen** and it
-  opens like an app.
-- Claude does the reading and research in one of two ways (set `ANALYSIS` in `.env`):
-  - **`claude-code`** (the default while there's no API key): the app just saves photos and queues
-    scans. Someone opens Claude Code in this folder on the rolodex computer and runs **`/analyze`**;
-    Claude Code reads every waiting card and pamphlet, researches those suppliers and every one due
-    for its 3-month recheck, and saves the results. Run it daily or whenever new cards come in. The
-    home page shows how much is waiting. Plain-English questions: **`/find-supplier`** in Claude Code.
-  - **`api`** (once there's an Anthropic API key): the app reads cards the moment they're added,
-    researches in the background, rechecks on its own and answers **Ask Claude** questions in the
-    app. Reading a card costs a few cents; researching a supplier with web search is roughly $0.25
-    to $1.
+The same app also runs on any computer with Python (`run.bat` on Windows, `run.sh` on Linux); see
+**Running it on your own computer** below.
 
-## Set up (once)
-
-1. Install Python 3.11 or newer (Windows: from python.org, tick "Add python.exe to PATH").
-2. Download this repository onto the server computer.
-3. Copy `.env.example` to `.env` and fill in:
-   - `ANTHROPIC_API_KEY`: the company's key, once you have one (leave it out to use Claude Code)
-   - `APP_PASSWORD`: one password everyone uses to sign in (the app is reachable from outside)
-   - `SECRET_KEY`: any long random string
-4. Start it: double-click `run.bat` (Windows) or run `./run.sh` (Linux). The first start installs
-   what it needs. Then open http://localhost:8000.
-
-To keep it running after a reboot, add `run.bat` to Windows Task Scheduler ("At startup"), or run
-`run.sh` as a systemd service on Linux.
-
-## Reaching it from phones and outside the office
-
-On the office Wi-Fi, phones can open `http://<server computer's IP>:8000`. To reach it from
-anywhere (trade shows, a supplier's site), put it behind a tunnel instead of opening a port on the
-firewall. Either works and gives you an `https://` address:
-
-- **Cloudflare Tunnel** (free): install `cloudflared` on the server and run
-  `cloudflared tunnel --url http://localhost:8000` for a quick test URL, or set up a named tunnel on
-  a company domain for a permanent address.
-- **Tailscale Funnel**: `tailscale funnel 8000`.
+The first version was a claude.ai page (`artifact/`, https://claude.ai/artifact/L1xZMaHagpDhwLrykRnxF2)
+with a cloud routine doing the analysis (`routine/`). Its suppliers were copied into this app with
+`tools/import_artifact.py`; the page and routine are no longer used.
 
 ## Using it
 
@@ -92,8 +62,22 @@ firewall. Either works and gives you an `https://` address:
   page). Take the photo or pick it from your phone's library. To add a card or pamphlet to a
   supplier already on file, use **+ Add** in the **Cards & pamphlets** section of its page; what's
   read fills in blanks, goes into notes, and triggers a rescan. In API mode you check a new card's
-  details before research starts; in Claude Code mode `/analyze` reads and researches in one go,
-  and you can edit afterwards.
+  details before research starts; with Claude Code it's read and researched in one go when you tap
+  **Done adding: analyze now**, and you can edit afterwards. **Save & add another** takes you straight
+  back for the next card; **Several at once** adds a batch of library photos, one company each.
+  A card from a company that's already in the rolodex goes onto that supplier and triggers a check
+  for anything new, rather than creating a duplicate.
+- **Analyze now**: the bar at the top of every page shows the analysis running (which supplier,
+  which step) and has **Cancel**; anything unfinished stays queued. **Last analysis** (bottom of the
+  page) shows Claude Code's output if something went wrong.
+- **Catalog**: **Browse all N products** on a supplier's page opens their catalog like a store:
+  departments on the left (a folding list on phones), subsections, a photo grid, search by name or
+  item number, and a page per product with its photos, details, listed price and a link to it on
+  their site. **Products** (top menu) searches every supplier's catalog at once. Catalogs are
+  copied from Shopify and WooCommerce stores and from sites whose product pages carry structured
+  data automatically (`python -m rolodex.catalog`); for other sites Claude builds them by hand
+  from their pages. Some sites don't have a photo for every product (Summit's lubricants, for
+  example); those show "No photo".
 - **Categories** sort suppliers by the kind of thing they sell (Flour & grains, Packaging, Sanitation &
   chemicals, and so on). The search page opens with **Browse by category** tiles; **Categories** in the
   filter lets you pick several at once (a supplier in any of them shows up) and combines with tags and
@@ -116,15 +100,25 @@ firewall. Either works and gives you an `https://` address:
   companies (or **Select all**, which follows the current search and filters), then
   **Scan selected**. Scans run one after another in the background.
 
-## Settings (`.env`)
+## Running it on your own computer
+
+1. Install Python 3.11 or newer (Windows: from python.org, tick "Add python.exe to PATH").
+2. Download this repository. Copy `.env.example` to `.env` if you want to set anything below.
+3. Double-click `run.bat` (Windows) or run `./run.sh` (Linux). Then open http://localhost:8000.
+4. For the analysis, install Claude Code on that computer and sign in (`claude`), or set an
+   `ANTHROPIC_API_KEY`.
+
+## Settings (`.env`, or Codespaces secrets)
 
 | Setting | Default | What it does |
 |---|---|---|
 | `ANALYSIS` | `claude-code` without an API key, else `api` | Who reads cards and researches (see above) |
 | `CLAUDE_MODEL` | `claude-opus-5` | Claude model used for reading, research and questions |
 | `RECHECK_DAYS` | `90` | Days between automatic rechecks |
-| `AUTO_RECHECK` | `1` | The app rechecks due suppliers itself every 15 minutes. Set `0` and schedule `python -m rolodex.recheck` instead if you prefer |
+| `AUTO_RECHECK` | `1` | While the app is running it starts the rechecks itself when suppliers are due. Set `0` to only run them with the button |
 | `ROLODEX_DATA_DIR` | `./data` | Where the database and card photos live (e.g. a backed-up drive) |
+| `ROLODEX_GIT_SYNC` | `1` in a Codespace, else `0` | Commit and push the data folder to GitHub every few minutes |
+| `APP_PASSWORD` | (none) | One shared password for the app, if you make it public |
 
 ## For developers
 
@@ -138,5 +132,12 @@ uvicorn rolodex.app:app --reload
 - `rolodex/claude.py`: every Claude call: `read_card`, `research` (web search), `ask`
 - `rolodex/recheck.py`: research queue, the 3-month recheck loop, and `save_reading` / `save_research`
 - `rolodex/tasks.py`: command-line bridge that Claude Code uses (`list`, `show`, `save`, `fail`,
-  `directory`); the skills in `.claude/skills/` drive it
-- `rolodex/db.py`: SQLite tables: suppliers, cards, notes, checks (history of every research run)
+  `begin`/`current`/`progress`/`finish` for the progress bar, `save catalog`, `directory`); the
+  skills in `.claude/skills/` drive it
+- `rolodex/runner.py`: starts Claude Code headless for **Analyze now**, the rechecks and **Ask Claude**;
+  progress and cancel
+- `rolodex/catalog.py`: copies a supplier's catalog (Shopify, WooCommerce, sitemap + structured data)
+  and finds missing product photos; `rolodex/images.py`: the cached photo proxy behind `/img`
+- `rolodex/gitsync.py`: saves the data folder to GitHub
+- `rolodex/db.py`: SQLite tables: suppliers, cards, notes, checks (history of every research run),
+  catalog_sections / catalog_products, analysis (the current run)

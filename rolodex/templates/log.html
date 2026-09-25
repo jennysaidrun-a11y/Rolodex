@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% from "_macros.html" import back %}
+{% block main %}
+{{ back("/", "Suppliers") }}
+<section class="card"><h1>Last analysis</h1>
+  <p class="muted">{{ run.state }}{% if run.started_at %} · started {{ run.started_at.replace("T", " ")[:16] }}{% endif %}{% if run.finished_at %} · finished {{ run.finished_at.replace("T", " ")[:16] }}{% endif %}</p>
+  {% if run.summary %}<p>{{ run.summary }}</p>{% endif %}
+  <h2>Claude Code's output</h2>
+  <pre class="log">{{ log or "Nothing yet." }}</pre>
+</section>
+{% endblock %}

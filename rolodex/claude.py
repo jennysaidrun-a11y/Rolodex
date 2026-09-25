@@ -263,8 +263,11 @@ def research_prompt(supplier: dict, notes: list[str], vocabulary: list[dict] | N
            if pamphlets else "")
         + "brochures: also list other useful PDFs you find (catalogs, spec sheets, allergen or "
         "certification documents) with card_id \"0\". Only direct links to PDF files.\n"
-        "changes_since_last_check: short bullets of what differs from the last check (empty on the first "
-        "check). Set needs_attention for anything the bakery should look at: a recall or warning letter, a "
+        "changes_since_last_check: on a recheck, look specifically for anything new since the last check "
+        "(news, recalls and regulatory actions, certification changes, new or discontinued products, price "
+        "changes, closures or ownership changes); short bullets of each, or [\"No changes found\"] when "
+        "nothing is new (empty on the first check). Keep what still holds from the last profile. "
+        "Set needs_attention for anything the bakery should look at: a recall or warning letter, a "
         "lost certification, a closure or acquisition, or a website/phone that no longer works. "
         "The summary is 2-3 sentences on who they are and what they could supply us.\n\n"
         + (_category_guide(categories) + "\n\n" if categories else "")
@@ -295,7 +298,7 @@ def research(supplier: dict, notes: list[str], vocabulary: list[dict] | None = N
     raise ClaudeError("Research took too long and was stopped.")
 
 
-def directory(suppliers: list[dict], notes: dict[int, list[str]]) -> str:
+def directory(suppliers: list[dict], notes: dict[int, list[str]], catalog_sections: dict[int, list[str]] | None = None) -> str:
     rows = []
     for s in suppliers:
         p = s["profile"]
@@ -311,6 +314,7 @@ def directory(suppliers: list[dict], notes: dict[int, list[str]]) -> str:
             "regulatory": [f"{x['date']} {x['kind']}: {x['description']}" for x in p.get("regulatory", [])],
             "attention": s["attention_note"] if s["needs_attention"] else "",
             "last_checked": s["last_checked"], "staff_notes": notes.get(s["id"], []),
+            **({"catalog_sections": catalog_sections.get(s["id"], [])} if catalog_sections else {}),
         })
     return json.dumps(rows, separators=(",", ":"))
 

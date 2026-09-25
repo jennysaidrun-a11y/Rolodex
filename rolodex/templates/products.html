@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pager, back %}
+{% block title %}Products · Supplier Rolodex{% endblock %}
+{% block wide %}wide{% endblock %}
+{% block main %}
+{{ back("/", "Suppliers") }}
+<section class="card">
+  <h1>Search every catalog</h1>
+  <form method="get" class="store-search">
+    <input type="search" name="q" value="{{ q }}" placeholder="e.g. bread bag, 9x13 pan, stretch film, item #" autofocus>
+    <button class="btn">Search</button>
+  </form>
+</section>
+{% if q %}
+<p class="muted">{{ total }} product{{ "s" if total != 1 }} matching “{{ q }}”</p>
+<div class="product-grid">
+  {% for p in products %}
+  <a class="product" href="/supplier/{{ p.supplier_id }}/catalog/item/{{ p.id|urlencode }}">
+    <span class="pimg"><img src="{{ img(p.image_url, 400) or '/static/no-photo.svg' }}" alt="" loading="lazy"></span>
+    <span class="pname">{{ p.name }}</span>
+    <span class="psupplier">{{ p.company }}</span>
+    {% if p.sku %}<span class="psku">#{{ p.sku }}</span>{% endif %}
+    {% if p.price %}<span class="pprice">{{ p.price }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{{ pager(page_no, pages, "?q=" ~ q|urlencode ~ "&") }}
+{% endif %}
+{% endblock %}

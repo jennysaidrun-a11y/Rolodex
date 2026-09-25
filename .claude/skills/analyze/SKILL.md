@@ -1,17 +1,101 @@
 ---
 name: analyze
-description: Read the business cards and pamphlet covers waiting in the Supplier Rolodex (the claude.ai page) and research every supplier that is queued or due for its 3-month recheck. Use when the user says /analyze, "run the analysis", "process the new cards", or "do the rechecks".
+description: Read the business cards and pamphlet covers waiting in the Supplier Rolodex, research every supplier that is queued or due for its 3-month recheck, and copy each one's product catalog from their website. Use when the user says /analyze, "run the analysis", "process the new cards", or "do the rechecks". The app's "Done adding: analyze now" button runs this too.
 ---
 
 # Analyze the rolodex
 
-Follow `routine/analyze.md` in this repo exactly. It is the same procedure the page's
-"Done adding: analyze now" button and the nightly routine run (trigger
-`trig_01Dq17WHzafvRP6ZmAZvrhb6`, whose prompt is that file's text). It uses only built-in tools,
-no scripts, so it runs in unattended sessions too.
+Everything goes through `python -m rolodex.tasks` (prints JSON; `save` checks your JSON and says
+what's wrong, so fix it and save again). Put your JSON files in `work/` (make it with `mkdir -p work`).
+Work without asking questions. Don't change code or commit anything; the app saves the data to
+GitHub by itself.
 
-If you change the procedure, change `routine/analyze.md` and update the trigger's prompt to match
-(`update_trigger` with the file's full text).
+## 1. Start
 
-`tools/analyze.py` is an optional helper for interactive sessions (plan, prompts, JSON checks);
-the routine doesn't depend on it.
+`python -m rolodex.tasks begin`, then `python -m rolodex.tasks list`. It lists cards/pamphlets to
+read and suppliers to research. If both are empty, run `finish Nothing was waiting.` and stop.
+
+## 2. Read each card or pamphlet cover
+
+For each item in `read`:
+1. `python -m rolodex.tasks current <supplier_id>`
+2. `python -m rolodex.tasks show card <card_id>`: Read every photo path it lists (a card's first
+   photo is the front, the second the back), follow its instructions, and write the JSON (matching
+   `output_schema`) to `work/card-<card_id>.json`.
+3. `python -m rolodex.tasks save card <card_id> work/card-<card_id>.json`.
+   If the company is already in the rolodex, the save puts the card on that supplier and queues it for
+   a check of what's new (`merged_into_existing`). That's expected; never treat it as a duplicate.
+
+## 3. Research each supplier
+
+Run `list` again (merges change the ids). For each supplier in `research`: with 2 or more, give
+each to its own subagent (Agent tool, one supplier each, in parallel) with this whole section and the
+supplier id; research one yourself only when it's the only one.
+
+Before each step run `python -m rolodex.tasks progress <id> <step> 6 <label>` (steps below). If a
+tasks command prints `"cancelled": true`, stop at once and do nothing more.
+
+1. **Company & products** (`progress <id> 1 6 Company and products`): `python -m rolodex.tasks current <id>`,
+   then `python -m rolodex.tasks show research <id>` and follow its instructions and `output_schema`.
+   When the supplier has been checked before, this is a check for what's new since then; the
+   instructions include the last profile. For each highlight product, get the product's own photo
+   URL from its page's HTML when WebFetch doesn't show it:
+   `curl -sL --max-time 20 -A "Mozilla/5.0" "<page_url>" | grep -oiE '(og:image|twitter:image)"[^>]*content="[^"]+"|<img[^>]+(src|data-src)="[^"]+"' | head -40`
+   (og:image is usually the product photo; make relative URLs absolute; skip logos, banners and
+   images that are the same on every page).
+2. **Pricing** (`progress <id> 2 6 Pricing`): required; follow the pricing rules in the instructions.
+3. **Certifications & regulatory** (`progress <id> 3 6 Certifications and regulatory`).
+4. **Reviews & news** (`progress <id> 4 6 Reviews and news`).
+5. **Save** (`progress <id> 5 6 Saving the profile`): write `work/research-<id>.json` and
+   `python -m rolodex.tasks save research <id> work/research-<id>.json`.
+6. **Catalog** (saving the research moves the progress to this step): see below. Do it on every
+   research, rechecks included, so the copy picks up new and discontinued products. Saving the
+   catalog finishes the supplier. If they have no product or service list online at all:
+   `python -m rolodex.tasks no-catalog <id> <why>`.
+
+Keep research quick: about 8-12 web searches per supplier. A source URL for every fact; never invent
+prices, certifications or dates.
+
+If a company can't be found or researched: `python -m rolodex.tasks fail <id> <why>`.
+
+## Catalog: a copy of their website's product list
+
+The app shows it like a store: their departments and sections, every product with its photos,
+item number, listed price and a link to the product page. Copy their organization and content,
+not their design.
+
+On a recheck, `list` shows how the last copy was made (`catalog`). Copy it again the same way:
+automatically if that worked before, otherwise go through their site again and save the complete
+updated list (products still there, new ones added, discontinued ones left out).
+
+1. Try the automatic copy first: `python -m rolodex.catalog <id>` (or `python -m rolodex.catalog <id> <site url>`
+   when the products are on a different site than the one on file). It reads Shopify and WooCommerce
+   stores and any site whose product pages carry structured data, obeys robots.txt, and saves
+   straight into the rolodex. It prints `"saved": true` with the counts, or `"found": 0`.
+2. When it finds nothing, or clearly far fewer products than their site shows, build it by hand
+   (photos are just links here; the app fetches and keeps them, so include one for every product):
+   - Their navigation menu and category pages give the sections and subsections (their names,
+     their order). Use `curl -sL -A "Mozilla/5.0"` for the HTML (WebFetch drops image URLs).
+   - Each product (or product line, when the site lists lines rather than single items): name,
+     item number, one short details line (size, pack, material), listed price with unit ("" if not
+     shown), page_url, image_url (its own photo, found as in step 1), images (more photos, optional).
+   - Include every product the site lists; give it up to about 20 minutes and say what's missing in
+     `note` if you stop early. Wait about half a second between requests; skip what robots.txt disallows.
+   - Write `work/catalog-<id>.json`:
+     `{"source": "<site>", "note": "", "sections": [{"id": "slug", "name": "Their name", "parent_id": "" or a section id}],
+      "products": [{"id": "item # or slug", "section_id": "...", "name": "...", "sku": "", "details": "", "price": "",
+      "page_url": "...", "image_url": "...", "images": []}]}`
+     and save it: `python -m rolodex.tasks save catalog <id> work/catalog-<id>.json`.
+   - Products saved without a photo: `python -m rolodex.catalog photos <id>` looks for each one's
+     photo on its own page (skipping the site's generic images).
+   - A supplier with no product list at all (a service company, say) gets a catalog of its services
+     the same way, from its services pages.
+
+## 4. Anything added meanwhile
+
+Run `list` again; if anything new is waiting, do steps 2-3 for it. Repeat until nothing is waiting.
+
+## 5. Finish
+
+`python -m rolodex.tasks finish <one or two sentences: how many cards read, how many suppliers
+researched, anything that needs attention>`.

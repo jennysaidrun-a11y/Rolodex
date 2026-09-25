@@ -1,4 +1,7 @@
-data/
+data/rolodex.db
+data/rolodex.db-journal
+data/rolodex-backup.tmp
+data/cache/
 .env
 __pycache__/
 *.pyc

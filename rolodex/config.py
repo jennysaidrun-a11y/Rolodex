@@ -25,6 +25,13 @@ DATA_DIR = Path(os.environ.get("ROLODEX_DATA_DIR", ROOT / "data"))
 DB_PATH = DATA_DIR / "rolodex.db"
 CARDS_DIR = DATA_DIR / "cards"
 DOCS_DIR = DATA_DIR / "docs"          # saved copies of suppliers' pamphlet / catalog PDFs
+CACHE_DIR = DATA_DIR / "cache"        # product photos fetched from supplier sites, analysis logs (not saved to git)
+# A consistent copy of the database that git keeps (the live file changes too often to commit safely).
+BACKUP_PATH = DATA_DIR / "rolodex-backup.db"
+
+# Save the data folder to GitHub every few minutes (on in a Codespace; see .devcontainer/).
+GIT_SYNC = os.environ.get("ROLODEX_GIT_SYNC", "1" if os.environ.get("CODESPACES") == "true" else "0") == "1"
+GIT_SYNC_SECONDS = int(os.environ.get("ROLODEX_GIT_SYNC_SECONDS", "180"))
 
 # One shared password for everyone at the company. The data isn't sensitive, but the
 # app is reachable from outside and every card/recheck spends Claude API credit.
@@ -44,3 +51,7 @@ RECHECK_DAYS = int(os.environ.get("RECHECK_DAYS", "90"))
 # The app rechecks due suppliers on its own in the background; set to 0 to turn off
 # (e.g. when a scheduled task runs `python -m rolodex.recheck` instead).
 AUTO_RECHECK = os.environ.get("AUTO_RECHECK", "1") == "1"
+
+# In "claude-code" mode the app starts Claude Code itself ("Analyze now", and the 3-month rechecks
+# while the app is running) when the `claude` command is installed and signed in.
+CLAUDE_COMMAND = os.environ.get("CLAUDE_COMMAND", "claude")

@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ s.company }} · Supplier Rolodex{% endblock %}
 {% macro src(url) %}{% if url|link %} <a class="src" href="{{ url|link }}" target="_blank" rel="noopener">source</a>{% endif %}{% endmacro %}
+{% from "_macros.html" import back, product_card %}
 {% block main %}
+{{ back("/", "Suppliers") }}
 <section class="card">
   <div class="head">
     <div>
@@ -17,8 +19,10 @@
     <p class="notice">{{ unread|length }} photo set{{ "s" if unread|length > 1 }} waiting to be read.
       {% if use_api %}Refresh in a moment.{% else %}Claude Code reads {{ "them" if unread|length > 1 else "it" }} and researches the company on the next <strong>/analyze</strong> run.
       You can <a href="/supplier/{{ s.id }}/edit">type details in</a> now if you like.{% endif %}</p>
+  {% elif s.status == "researching" and s.progress %}
+    <p class="notice">Claude is researching this supplier: {{ s.progress.label }} (step {{ s.progress.step }} of {{ s.progress.of }}).</p>
   {% elif s.status == "queued" and not use_api %}
-    <p class="notice">Waiting to be scanned. Claude Code researches it on the next <strong>/analyze</strong> run.</p>
+    <p class="notice">Queued for research. Tap <strong>Done adding: analyze now</strong> on the Suppliers page, or it's done on the next run.</p>
   {% elif s.status in ("queued", "researching") %}
     <p class="notice">Claude is scanning this supplier. This takes a few minutes; refresh the page to see the result.</p>
   {% elif s.status == "error" %}
@@ -49,6 +53,16 @@
     {% if s.status in ("unread", "queued", "researching", "new") %}disabled{% endif %}>Scan now</button></form>
 </section>
 
+{% if s.catalog.total or catalog_preview %}
+<section class="card"><div class="head"><h2>Catalog</h2>
+  <a class="btn small" href="/supplier/{{ s.id }}/catalog">Browse all {{ s.catalog.total }} products</a></div>
+  <p class="muted">Copied from their website{% if s.catalog.crawled_at %} {{ s.catalog.crawled_at[:10] }}{% endif %}: {{ s.catalog.sections }} section{{ "s" if s.catalog.sections != 1 }}, {{ s.catalog.with_photos }} with photos.</p>
+  <div class="product-grid compact">{% for x in catalog_preview %}{{ product_card(x, s.id) }}{% endfor %}</div>
+</section>
+{% elif s.catalog.note %}
+<section class="card"><h2>Catalog</h2><p class="muted">{{ s.catalog.note }}</p></section>
+{% endif %}
+
 {% if p %}
 {% if p.changes_since_last_check %}
 <section class="card"><h2>Changed since the last check</h2>
@@ -56,7 +70,10 @@
 {% endif %}
 
 <section class="card"><h2>Products &amp; services</h2>
-  {% if p.products %}<ul>{% for x in p.products %}<li><strong>{{ x.name }}</strong>{% if x.details %}: {{ x.details }}{% endif %}</li>{% endfor %}</ul>
+  {% if p.products %}<div class="highlights">{% for x in p.products %}
+    <a class="hl" {% if x.page_url|link %}href="{{ x.page_url|link }}" target="_blank" rel="noopener"{% endif %}>
+      <img src="{{ img(x.image_url, 200) or '/static/no-photo.svg' }}" alt="" loading="lazy">
+      <span><strong>{{ x.name }}</strong>{% if x.details %}<br><span class="muted">{{ x.details }}</span>{% endif %}</span></a>{% endfor %}</div>
   {% else %}<p class="muted">Nothing found.</p>{% endif %}
   <h3>Pricing</h3>
   {% if p.pricing_summary %}<p>{{ p.pricing_summary }}</p>{% endif %}
