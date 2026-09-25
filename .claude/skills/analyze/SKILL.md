@@ -73,14 +73,22 @@ leave out discontinued ones. Never save a copy with fewer photos than before for
 1. Try the automatic copy first: `python -m rolodex.catalog <id>` (or `python -m rolodex.catalog <id> <site url>`
    when the products are on a different site than the one on file). It reads Shopify and WooCommerce
    stores and any site whose product pages carry structured data, obeys robots.txt, and saves
-   straight into the rolodex. It prints `"saved": true` with the counts, or `"found": 0`.
+   straight into the rolodex, from the site's English version when it has one. It prints `"saved": true`
+   with the counts, or `"found": 0`. If it prints a `next_step` about translating, do that (step 2's
+   English rule) and save the translated copy.
 2. When it finds nothing, or clearly far fewer products than their site shows, build it by hand
    (photos are just links here; the app fetches and keeps them, so include one for every product):
    - Their navigation menu and category pages give the sections and subsections (their names,
      their order). Use `curl -sL -A "Mozilla/5.0"` for the HTML (WebFetch drops image URLs).
    - Each product (or product line, when the site lists lines rather than single items): name,
-     item number, one short details line (size, pack, material), listed price with unit ("" if not
-     shown), page_url, image_url, images (more photos, optional).
+     item number, one short details line (size, pack, material), the site's description, specs
+     (dimensions, sizes, material, capacity, pack/case count... as label/value pairs, exactly as the
+     site states them), datasheet or spec-sheet links (`files`), listed price with unit ("" if not
+     shown; a $0 or $1 placeholder is not a price), page_url, image_url, images (more photos, optional).
+   - English: when their site has an English version (a language switcher, `/en/`), copy that one.
+     When it only exists in another language, translate section names, product names, details,
+     descriptions and spec labels into English, keeping brand and model names and item numbers as
+     they are. (A Spanish "Cintas adhesivas" section means "Adhesive tapes", not the company Cintas.)
    - Photos: every product should have one if the site shows one. Use the product's own photo when
      there is one; when the site only has a photo per product line or category (common on sites
      without an online store), use the photo it shows next to that product or line. Look at all the
@@ -91,7 +99,9 @@ leave out discontinued ones. Never save a copy with fewer photos than before for
      `note` if you stop early. Wait about half a second between requests; skip what robots.txt disallows.
    - Write `work/catalog-<id>.json`:
      `{"source": "<site>", "note": "", "sections": [{"id": "slug", "name": "Their name", "parent_id": "" or a section id}],
-      "products": [{"id": "item # or slug", "section_id": "...", "name": "...", "sku": "", "details": "", "price": "",
+      "products": [{"id": "item # or slug", "section_id": "...", "name": "...", "sku": "", "details": "",
+      "description": "", "specs": [["Dimensions", "12 x 9 x 4 in"], ["Material", "Kraft"]],
+      "files": [{"name": "Datasheet", "url": "https://..."}], "price": "",
       "page_url": "...", "image_url": "...", "images": []}]}`
      and save it: `python -m rolodex.tasks save catalog <id> work/catalog-<id>.json`.
    - Every save then opens each entry's page by itself (`python -m rolodex.catalog complete <id>`,
@@ -99,8 +109,10 @@ leave out discontinued ones. Never save a copy with fewer photos than before for
      with a title, photo and link, like an "AEDs" page listing each AED) becomes a section holding
      each model with its photo, and products still without a photo get one from their own page
      (lazy-loaded pictures included, and a product-family photo the page labels with the product's
-     name). So list categories as you find them; you don't have to open every one by hand. Check the
-     `models` and `photos` counts it prints and look again at anything it couldn't fill.
+     name). It also reads each product's own page for its spec table, dimensions, datasheet links and
+     full description. So list categories as you find them; you don't have to open every one by
+     hand. Check the `models`, `photos` and `specs` counts it prints and look again at anything it
+     couldn't fill.
    - A supplier with no product list at all (a service company, say) gets a catalog of its services
      the same way, from its services pages.
 

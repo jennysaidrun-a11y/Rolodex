@@ -20,6 +20,18 @@
     {% if p.price %}<p class="big-price">{{ p.price }}</p><p class="muted">Price as listed on their site; ask the rep for your price.</p>{% endif %}
     {% if p.details %}<p><strong>{{ p.details }}</strong></p>{% endif %}
     {% if p.description %}<p class="desc">{{ p.description }}</p>{% endif %}
+    {% if p.specs %}
+    <h3>Specifications</h3>
+    <table class="specs">
+      {% for label, value in p.specs %}<tr><th scope="row">{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}
+    </table>
+    {% endif %}
+    {% if p.files %}
+    <h3>Datasheets and documents</h3>
+    <ul class="files">
+      {% for f in p.files if f.url|link %}<li><a href="{{ f.url|link }}" target="_blank" rel="noopener">{{ f.name }}</a></li>{% endfor %}
+    </ul>
+    {% endif %}
     <p>{% if p.page_url|link %}<a class="btn" href="{{ p.page_url|link }}" target="_blank" rel="noopener">View on their website</a>{% endif %}
       {% if s.phone %}<a class="btn ghost" href="tel:{{ s.phone.split(' / ')[0] }}">Call {{ s.contact_name or s.company }}</a>{% endif %}</p>
     <p class="prevnext">{% if prev_id %}<a href="/supplier/{{ s.id }}/catalog/item/{{ prev_id|urlencode }}">‹ Previous item</a>{% endif %}

@@ -42,7 +42,7 @@ class Node:
     def __init__(self, tag: str, attrs: dict, parent: "Node | None"):
         self.tag, self.attrs, self.parent = tag, attrs, parent
         self.children: list[Node] = []
-        self.text: list[str] = []
+        self.text: list[tuple[int, str]] = []
 
     def cls(self) -> str:
         return self.attrs.get("class", "") or ""
@@ -53,10 +53,20 @@ class Node:
             yield from c.walk()
 
     def all_text(self) -> str:
-        parts = []
-        for n in self.walk():
-            if n.tag not in SKIP_TAGS and not HIDDEN_TEXT.search(n.cls()):
-                parts += n.text
+        """The node's text in reading order (text between child tags stays where it was)."""
+        parts: list[str] = []
+
+        def add(n: "Node", depth: int = 0) -> None:
+            if n.tag in SKIP_TAGS or HIDDEN_TEXT.search(n.cls()) or depth > 200:
+                return
+            t = 0
+            for i, c in enumerate(n.children):
+                while t < len(n.text) and n.text[t][0] <= i:
+                    parts.append(n.text[t][1])
+                    t += 1
+                add(c, depth + 1)
+            parts.extend(x for _, x in n.text[t:])
+        add(self)
         return re.sub(r"\s+", " ", html.unescape(" ".join(parts))).strip()
 
 
@@ -84,7 +94,7 @@ class _Builder(HTMLParser):
 
     def handle_data(self, data):
         if data.strip():
-            self.cur.text.append(data)
+            self.cur.text.append((len(self.cur.children), data))   # where it sits among the child tags
 
 
 def parse(page: str) -> Node:
@@ -97,9 +107,23 @@ def parse(page: str) -> Node:
     return b.root
 
 
+def _in_main(n: Node) -> bool:
+    a = n.parent
+    while a is not None:
+        if a.tag in ("main", "article") or a.attrs.get("role") == "main":
+            return True
+        a = a.parent
+    return False
+
+
 def _is_chrome(n: Node) -> bool:
-    return n.tag in CHROME_TAGS or n.tag in SKIP_TAGS or bool(CHROME_CLASS.search(n.cls())) \
-        or n.attrs.get("role") in ("navigation", "banner", "contentinfo")
+    if n.tag in ("html", "body", "main", "article"):   # page-wide classes like "nav-dropdown-has-arrow"
+        return False
+    if n.tag in CHROME_TAGS or n.tag in SKIP_TAGS or n.attrs.get("role") in ("navigation", "banner", "contentinfo"):
+        return True
+    m = CHROME_CLASS.search(n.cls())
+    # Inside the page's main content a "product-header" / "product-footer" block is content, not the site's own.
+    return bool(m) and not (m.group(2).lower() in ("header", "footer") and _in_main(n))
 
 
 def content_nodes(root: Node, skip_related: bool = False):
@@ -295,3 +319,103 @@ def best_photo(url: str, page: str, name: str) -> list[str]:
     matching = [u for s, _, u in scored if s < 0]
     rest = [u for _, _, u in sorted(scored, key=lambda x: x[1]) if u not in matching]
     return list(dict.fromkeys(matching + rest))[:8]
+
+
+# ---------- a product page's specs, datasheets and description ----------
+
+NOT_SPEC_LABEL = re.compile(r"^(q|a|pros|cons|note|notes|disclaimer|warning|phone|tel|telephone|fax|e-?mail|address|hours|call|contact|share|follow|posted|"
+                            r"categor(y|ies)|tags?|sku|price|quantity|qty|cart|reviews?|rating|home)\b", re.I)
+_UNIT = r"(?:\"|''|inch(?:es)?|in\.?|microns?|mic|mil|mm|cm|ft|m|')"
+DIMENSIONS = re.compile(r"\b\d+(?:[.,]\d+)?\s*" + _UNIT + r"?\s*[x×]\s*\d+(?:[.,]\d+)?"
+                        r"(?:\s*" + _UNIT + r"?\s*[x×]\s*\d+(?:[.,]\d+)?)?\s*" + _UNIT + r"?(?![a-z])", re.I)
+DESC_AREA = re.compile(r"description|tab-?panel|product-?(details|info|content)|specification|features|entry-content", re.I)
+DOC_LINK = re.compile(r"\.pdf(\?|#|$)|datasheet|data-sheet|spec-?sheet|ficha|sds|msds|tds", re.I)
+
+
+def _cells(row: Node) -> list[str]:
+    return [c.all_text() for c in row.children if c.tag in ("th", "td")]
+
+
+def _table_specs(table: Node) -> list[list[str]]:
+    rows = [n for n in table.walk() if n.tag == "tr"]
+    grid = [_cells(r) for r in rows]
+    grid = [g for g in grid if any(g)]
+    if not grid:
+        return []
+    if all(len(g) == 2 for g in grid):
+        return [[a, b] for a, b in grid if a and b]
+    head = grid[0]
+    if len(head) >= 3 and all(n.tag == "th" for n in rows[0].children if n.tag in ("th", "td")):
+        out = []
+        for g in grid[1:41]:
+            value = "; ".join(f"{h}: {c}" for h, c in zip(head[1:], g[1:]) if c)
+            if g and g[0] and value:
+                out.append([g[0], value])
+        return out
+    return []
+
+
+def product_specs(url: str, page: str) -> dict:
+    """What a product page says about the item beyond its name: spec tables and label/value lists
+    (dimensions, material, pack size...), datasheet and spec-sheet links, and the page's own
+    description text. Returns {specs: [[label, value]], files: [{name, url}], description}."""
+    root = parse(page)
+    specs, files, seen_files = [], [], set()
+    nodes = list(content_nodes(root, skip_related=True))
+    inside_table = set()
+    for n in nodes:
+        if n.tag == "table":
+            for x in n.walk():
+                inside_table.add(id(x))
+            specs += _table_specs(n)
+        elif n.tag == "dl":
+            kids = [c for c in n.children if c.tag in ("dt", "dd")]
+            for a, b in zip(kids, kids[1:]):
+                if a.tag == "dt" and b.tag == "dd" and a.all_text() and b.all_text():
+                    specs.append([a.all_text(), b.all_text()])
+        elif n.tag in ("li", "p") and id(n) not in inside_table:
+            text = n.all_text()
+            m = re.match(r"^([A-Za-zÀ-ÿ][\w /()&.,%-]{1,40}?)\s*:\s*(.{1,240})$", text)
+            if m and not any(c.tag in ("li", "p", "table") for c in n.walk() if c is not n):
+                specs.append([m.group(1).strip(), m.group(2).strip()])
+        elif n.tag == "a" and n.attrs.get("href") and DOC_LINK.search(n.attrs["href"]):
+            href = urljoin(url, html.unescape(n.attrs["href"]))
+            if href.startswith(("http://", "https://")) and href not in seen_files:
+                seen_files.add(href)
+                name = n.all_text() or urlparse(href).path.rsplit("/", 1)[-1]
+                files.append({"name": name[:120], "url": href})
+    clean_specs, seen = [], set()
+    for label, value in specs:
+        label, value = label.strip(" :")[:80], value.strip()[:300]
+        key = (label.lower(), value.lower())
+        if not label or not value or key in seen or NOT_SPEC_LABEL.search(label) or len(label) > 60:
+            continue
+        seen.add(key)
+        clean_specs.append([label, value])
+    # The product's own text: paragraphs around the page title (h1), outside menus and related blocks.
+    description = ""
+    h1 = next((n for n in nodes if n.tag == "h1"), None)
+    if h1 is not None:
+        area, texts = h1, []
+        for _ in range(7):
+            if area.parent is None:
+                break
+            area = area.parent
+            texts = [p.all_text() for p in content_nodes(area, skip_related=True)
+                     if p.tag == "p" and id(p) not in inside_table]
+            texts = [t for t in texts if len(t) > 30]
+            if sum(len(t) for t in texts) >= 200:
+                break
+        # plus the description / specifications tabs further down the page
+        for area in nodes:
+            if DESC_AREA.search(area.cls() + " " + area.attrs.get("id", "")) and area.tag in ("div", "section"):
+                texts += [x.all_text() for x in content_nodes(area, skip_related=True)
+                          if x.tag in ("p", "li", "h3", "h4") and id(x) not in inside_table and len(x.all_text()) > 3
+                          and not any(c.tag in ("p", "li") for c in x.walk() if c is not x)]
+        description = "\n".join(dict.fromkeys(texts))[:4000]
+    if not any(DIMENSIONS.search(v) or re.search(r"dimension|size|measure|medida|length|width|height", l, re.I)
+               for l, v in clean_specs):
+        sizes = list(dict.fromkeys(m.group(0).strip() for m in DIMENSIONS.finditer(description or "")))
+        if sizes:
+            clean_specs.append(["Sizes mentioned", ", ".join(sizes[:8])])
+    return {"specs": clean_specs[:60], "files": files[:8], "description": description}

@@ -49,14 +49,20 @@ class Site:
     def __init__(self, url: str, minutes: float = 20):
         if "://" not in url:
             url = "https://" + url
-        p = urlparse(url)
-        self.root = f"{p.scheme}://{p.netloc}"
         self.deadline = time.time() + minutes * 60
         self.last = 0.0
         self.requests = 0
+        self.language = ""
+        self.rebase(url)
+
+    def rebase(self, url: str) -> None:
+        """Crawl from url's site; a path (like /en) stays on the root so the English copy is used."""
+        p = urlparse(url)
+        self.host = f"{p.scheme}://{p.netloc}"
+        self.root = self.host + p.path.rstrip("/")
         self.robots = urllib.robotparser.RobotFileParser()
         try:
-            self.robots.parse(self.get(self.root + "/robots.txt", check_robots=False).decode("utf-8", "replace").splitlines())
+            self.robots.parse(self.get(self.host + "/robots.txt", check_robots=False).decode("utf-8", "replace").splitlines())
         except Exception:
             self.robots.parse([])
 
@@ -84,7 +90,7 @@ class Site:
 
     def json(self, path: str):
         try:
-            return json.loads(self.get(urljoin(self.root, path)))
+            return json.loads(self.get(self.root + path if path.startswith("/") else urljoin(self.root + "/", path)))
         except (urllib.error.URLError, ValueError, PermissionError, TimeoutError, OSError):
             return None
 
@@ -181,8 +187,9 @@ def woocommerce(site: Site) -> dict | None:
         for p in batch:
             prices = p.get("prices") or {}
             price = ""
-            if prices.get("price"):
-                unit = int(prices.get("currency_minor_unit") or 2)
+            unit = int(prices.get("currency_minor_unit") or 2)
+            # A $0 or $1 "price" is a quote-only shop's placeholder, not a price.
+            if prices.get("price") and int(prices["price"]) / 10 ** unit > 1:
                 price = f"{prices.get('currency_symbol', '$')}{int(prices['price']) / 10 ** unit:.2f}"
             images = [i.get("src") for i in p.get("images", []) if i.get("src")]
             pcats = [str(c["id"]) for c in p.get("categories", []) if c.get("id") in by_id]
@@ -192,7 +199,9 @@ def woocommerce(site: Site) -> dict | None:
                         "name": clean(p.get("name"), 300), "sku": str(p.get("sku") or ""),
                         "details": clean(p.get("short_description"), 300), "description": clean(p.get("description"), 4000),
                         "price": price, "page_url": p.get("permalink", ""), "image_url": images[0] if images else "",
-                        "images": images[1:12]})
+                        "images": images[1:12],
+                        "specs": [[clean(a.get("name"), 80), ", ".join(clean(t.get("name"), 80) for t in a.get("terms", []))]
+                                  for a in p.get("attributes", []) if a.get("name") and a.get("terms")]})
         page += 1
         batch = site.json(f"/wp-json/wc/store/v1/products?per_page=100&page={page}")
         batch = batch if isinstance(batch, list) else None
@@ -215,8 +224,8 @@ PRODUCTISH = re.compile(r"/(product|products|p|item|items|shop|catalog|store|sku
 
 
 def sitemap_urls(site: Site) -> list[str]:
-    starts = list(site.robots.site_maps() or [])
-    starts = starts or [site.root + "/sitemap.xml", site.root + "/sitemap_index.xml", site.root + "/wp-sitemap.xml"]
+    own = [site.root + "/sitemap.xml", site.root + "/sitemap_index.xml", site.root + "/wp-sitemap.xml"]
+    starts = (own if site.root != site.host else []) + list(site.robots.site_maps() or []) or own
     seen, urls, queue = set(), [], list(starts)
     while queue and len(seen) < 200 and not site.out_of_time():
         sm = queue.pop(0)
@@ -233,7 +242,45 @@ def sitemap_urls(site: Site) -> list[str]:
             queue = sorted(locs, key=lambda u: 0 if "product" in u.lower() else 1) + queue
         else:
             urls += locs
+    if site.root != site.host:   # the English copy only, not the other languages
+        urls = [u for u in urls if u.startswith(site.root + "/")]
     return list(dict.fromkeys(urls))
+
+
+def _lang(page: str) -> str:
+    m = re.search(r"<html[^>]*\slang=[\"']?([A-Za-z-]+)", page[:5000], re.I)
+    return m.group(1).lower() if m else ""
+
+
+def english_root(site: Site) -> None:
+    """Crawl the English version of a site when the main one is in another language (a Spanish
+    home page with an /en/ copy, say), so product names come out in English. Sets site.language
+    to the language that will be copied."""
+    try:
+        page = site.get(site.root + "/").decode("utf-8", "replace")
+    except Exception:
+        return
+    site.language = _lang(page)
+    if not site.language or site.language.startswith("en"):
+        return
+    links = []
+    for tag in re.findall(r"<link[^>]+hreflang=[\"']?en[A-Za-z-]*[\"']?[^>]*>", page, re.I):
+        m = re.search(r"href=[\"']([^\"']+)", tag)
+        if m:
+            links.append(urljoin(site.root + "/", html.unescape(m.group(1))))
+    links.sort(key=lambda u: 0 if re.search(r"/en-us\b|/us\b", u, re.I) else 1)
+    candidates = links + [site.host + p for p in ("/en/", "/en-us/", "/us/en/", "/en-US/")]
+    for url in dict.fromkeys(candidates):
+        if site.out_of_time():
+            return
+        try:
+            other = site.get(url).decode("utf-8", "replace")
+        except Exception:
+            continue
+        if _lang(other).startswith("en"):
+            site.rebase(url)
+            site.language = _lang(other)
+            return
 
 
 def _jsonld(page: str) -> list[dict]:
@@ -493,22 +540,94 @@ def expand(supplier_id: int, minutes: float = 10, depth: int = 2) -> dict:
     return {"expanded": expanded, "added": added, "pages_opened": len(opened)}
 
 
-COMPLETE_VERSION = 1   # raise when complete() learns something new, so existing catalogs get it once
+COMPLETE_VERSION = 2   # raise when complete() learns something new, so existing catalogs get it once
+# 1: models from category pages, missing photos. 2: specs, dimensions, datasheets and descriptions.
 
 
-def complete(supplier_id: int, minutes: float = 15) -> dict:
-    """After any catalog copy: open category pages for the models on them, then find missing photos."""
+def complete(supplier_id: int, minutes: float = 20) -> dict:
+    """After any catalog copy: open category pages for the models on them, find missing photos, then
+    read each product's page for its specs, dimensions, datasheets and description."""
     from . import db
-    res = {"models": expand(supplier_id, minutes * 2 / 3), "photos": fill_photos(supplier_id, minutes / 3)}
+    res = {"models": expand(supplier_id, minutes * 0.4), "photos": fill_photos(supplier_id, minutes * 0.2),
+           "specs": fill_specs(supplier_id, minutes * 0.4)}
     s = db.get_supplier(supplier_id)
     db.update_supplier(supplier_id, catalog={**s["catalog"], "completed": COMPLETE_VERSION})
     return res
+
+
+def fill_specs(supplier_id: int, minutes: float = 10) -> dict:
+    """Read each product's own page for what the catalog list leaves out: spec tables and label/value
+    lists (dimensions, material, pack size), datasheet links, and the page's description. Pages shared
+    by several products (a category page) aren't used for specs, only a product's own page."""
+    from . import db
+    products, _ = db.catalog_products(supplier_id, None, "", 100000)
+    pages: dict[str, list[dict]] = {}
+    for p in products:
+        url = p["page_url"].split("#")[0]
+        if url.startswith(("http://", "https://")):
+            pages.setdefault(url, []).append(p)
+    own = {u: ps[0] for u, ps in pages.items() if len(ps) == 1}
+    if not own:
+        return {"checked": 0, "with_specs": 0}
+    site = Site(next(iter(own)), minutes)
+    checked = improved = 0
+    with db.connect() as conn:
+        for url, p in own.items():
+            if site.out_of_time():
+                break
+            try:
+                page = site.get(url, limit=3_000_000).decode("utf-8", "replace")
+            except Exception:
+                continue
+            checked += 1
+            found = pagecards.product_specs(url, page)
+            have = {(a.lower(), b.lower()) for a, b in p["specs"]}
+            specs = p["specs"] + [x for x in found["specs"] if (x[0].lower(), x[1].lower()) not in have]
+            known = {f["url"] for f in p["files"]}
+            files = p["files"] + [f for f in found["files"] if f["url"] not in known]
+            desc = p["description"]
+            if len(found["description"]) > len(desc) + 40:   # the page says more than the list did
+                desc = found["description"]
+            if specs != p["specs"] or files != p["files"] or desc != p["description"]:
+                improved += 1
+                conn.execute("UPDATE catalog_products SET specs = ?, files = ?, description = ? "
+                             "WHERE supplier_id = ? AND id = ?",
+                             (json.dumps(specs[:60]), json.dumps(files[:8]), desc[:4000], supplier_id, p["id"]))
+    with_specs = sum(1 for p in db.catalog_products(supplier_id, None, "", 100000)[0] if p["specs"] or p["files"])
+    return {"checked": checked, "improved": improved, "with_specs": with_specs}
+
+
+def english_outdated() -> None:
+    """Catalogs copied automatically from a site in another language before the crawler looked for the
+    site's English version: copy them again from the English one (the app runs this once at start)."""
+    from . import db
+    import logging
+    log = logging.getLogger("rolodex.catalog")
+    for s in db.all_suppliers():
+        cat = s.get("catalog") or {}
+        if not cat.get("total") or "language" in cat or cat.get("method") in ("", "by hand") or not cat.get("source"):
+            continue
+        try:
+            site = Site(cat["source"], 3)
+            english_root(site)
+            if site.language and not site.language.startswith("en") or site.root.rstrip("/") == cat["source"].rstrip("/"):
+                db.update_supplier(s["id"], catalog={**cat, "language": site.language})
+                continue
+            result = crawl(site.root, 20)
+            if result["products"] and result.get("language", "").startswith("en"):
+                db.save_catalog(s["id"], result)
+                log.info("Copied %s's catalog again in English: %s", s["company"], complete(s["id"]))
+            else:
+                db.update_supplier(s["id"], catalog={**cat, "language": site.language})
+        except Exception as e:
+            log.warning("Couldn't recopy %s's catalog in English: %s", s["company"], e)
 
 
 def complete_outdated() -> None:
     """Bring catalogs copied before the current complete() up to date (the app runs this once at start)."""
     from . import db
     import logging
+    english_outdated()
     for s in db.all_suppliers():
         cat = s.get("catalog") or {}
         if cat.get("total") and cat.get("completed", 0) < COMPLETE_VERSION:
@@ -563,6 +682,7 @@ def fill_photos(supplier_id: int, minutes: float = 15) -> dict:
 
 def crawl(url: str, minutes: float = 20) -> dict:
     site = Site(url, minutes)
+    english_root(site)
     result = None
     for method in (shopify, woocommerce, from_sitemap):
         try:
@@ -576,6 +696,7 @@ def crawl(url: str, minutes: float = 20) -> dict:
     result["source"] = site.root
     result["note"] = "Stopped at the time limit; the catalog may be incomplete." if site.out_of_time() else ""
     result["requests"] = site.requests
+    result["language"] = site.language
     return result
 
 
@@ -630,6 +751,10 @@ def main(argv: list[str]) -> None:
         summary = db.get_supplier(s["id"])["catalog"] | extra
         db.update_supplier(s["id"], progress="")
         db.analysis_finished(s["id"])
+        lang = result.get("language", "")
+        if lang and not lang.startswith("en"):
+            summary["next_step"] = (f"Their site is in '{lang}' with no English version. Translate the catalog into "
+                                    "English (see the skill) and save it again.")
         print(json.dumps({"saved": True, "platform": result["platform"], **summary}))
         return
     sys.exit(__doc__)
