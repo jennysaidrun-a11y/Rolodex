@@ -180,6 +180,10 @@ def init() -> None:
                         conn.execute("UPDATE cards SET read_at = created_at")
         # A research run cut off by a restart would otherwise stay "researching" forever.
         conn.execute("UPDATE suppliers SET status = 'queued', progress = '' WHERE status = 'researching'")
+        # A catalog review only shows progress; a supplier already researched and not due for its
+        # recheck isn't waiting for research (reviews left them "queued" after a restart).
+        conn.execute("UPDATE suppliers SET status = 'active' WHERE status = 'queued' AND last_checked IS NOT NULL "
+                     "AND last_checked != '' AND next_check > date('now')")
         conn.execute("INSERT OR IGNORE INTO analysis (id) VALUES (1)")
 
 
@@ -537,6 +541,7 @@ def checks_for(supplier_id: int) -> list[dict]:
             (supplier_id,))]
 
 
+ONE_LINER_VERSION = 1   # raise to have Claude rewrite products' shared or missing one-liners again
 REVIEW_VERSION = 1   # raise when the catalog review (analyze skill) should look again at every catalog
 
 
@@ -544,7 +549,10 @@ def needs_review() -> list[dict]:
     """Suppliers whose copied catalog Claude hasn't yet checked against their website, product by
     product (photos, specs, dimensions, datasheets and safety data sheets the automatic copy missed)."""
     return [s for s in all_suppliers() if s["status"] == "active" and (s["catalog"] or {}).get("total")
-            and int((s["catalog"] or {}).get("reviewed", 0) or 0) < REVIEW_VERSION]
+            and (int((s["catalog"] or {}).get("reviewed", 0) or 0) < REVIEW_VERSION
+                 # products you can't tell apart at a glance: one more pass (only one, so two truly
+                 # identical products can't keep the review running forever)
+                 or ((s["catalog"] or {}).get("one_liners", 0) < ONE_LINER_VERSION and unclear_one_liners(s["id"])))]
 
 
 def due_for_recheck() -> list[dict]:
@@ -666,7 +674,7 @@ def update_products(supplier_id: int, updates: list[dict], note: str = "") -> di
                              "WHERE supplier_id = ? AND id = ?", [*fields.values(), supplier_id, p["id"]])
     s = get_supplier(supplier_id)
     products = catalog_products(supplier_id, None, "", 100000)[0]
-    summary = {**s["catalog"], "reviewed": REVIEW_VERSION, "reviewed_at": now(),
+    summary = {**s["catalog"], "reviewed": REVIEW_VERSION, "reviewed_at": now(), "one_liners": ONE_LINER_VERSION,
                "with_photos": sum(1 for p in products if p["image_url"]),
                "with_specs": sum(1 for p in products if p["specs"]),
                "with_files": sum(1 for p in products if p["files"])}
@@ -793,3 +801,16 @@ def analysis_finished(supplier_id: int) -> None:
     if a["state"] == "running":
         update_analysis(finished=list(dict.fromkeys(a["finished"] + [supplier_id])),
                         planned=list(dict.fromkeys(a["planned"] + [supplier_id])))
+
+
+GENERIC_DETAILS = {"", "view details", "details", "learn more", "read more", "more info", "shop now", "view product"}
+
+
+def unclear_one_liners(supplier_id: int) -> set[str]:
+    """Products whose one-line summary (details) is missing, a button label, or the same as another
+    product's in this catalog: at a glance you can't tell what the item is."""
+    products = catalog_products(supplier_id, None, "", 100000)[0]
+    seen: dict[str, list[str]] = {}
+    for p in products:
+        seen.setdefault(" ".join((p["details"] or "").lower().split()).strip(" ."), []).append(p["id"])
+    return {i for key, ids in seen.items() if key in GENERIC_DETAILS or len(ids) > 1 for i in ids}
