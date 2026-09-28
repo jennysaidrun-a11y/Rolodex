@@ -422,3 +422,27 @@ def test_a_catalog_review_doesnt_leave_a_supplier_queued(client, capsys):
     db.update_supplier(sid, status="queued")   # left over from before this fix
     db.init()
     assert db.get_supplier(sid)["status"] == "active"
+
+
+def test_ask_claude_asks_a_follow_up_question(client, monkeypatch):
+    import html, re
+    sid = new_supplier()
+    db.save_catalog(sid, CATALOG)
+    monkeypatch.setattr(config, "USE_API", True)
+    asked = []
+    def ask_products(question, products):
+        asked.append(question)
+        if "They answered" not in question:
+            return {"answer": "A few films could work.", "matches": [{"key": f"{sid}/SF-1", "why": "Wraps pallets"}],
+                    "follow_up": "What width do you need?", "options": ["18 in", "20 in"]}
+        return {"answer": "The 18 in film.", "matches": [{"key": f"{sid}/SF-1", "why": "18 in wide"}],
+                "follow_up": "", "options": []}
+    monkeypatch.setattr(app_module.claude, "ask_products", ask_products)
+    page = client.post("/products/ask", data={"question": "pallet wrap"}).text
+    assert "What width do you need?" in page and 'value="18 in"' in page and "Best matches so far" in page
+    history = html.unescape(re.search(r'name="history" value="([^"]*)"', page).group(1))
+    page = client.post("/products/ask", data={"question": "pallet wrap", "history": history,
+                                              "asked": "What width do you need?", "reply": "18 in", "typed": ""}).text
+    assert asked[-1] == "pallet wrap\nYou asked: What width do you need?\nThey answered: 18 in"
+    assert "The 18 in film." in page and "To narrow it down" not in page and "Matching products" in page
+    assert "Claude asked:" in page
