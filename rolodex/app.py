@@ -221,7 +221,8 @@ def supplier(request: Request, supplier_id: int, tab: str = ""):
     s = _get(supplier_id)
     return page(request, "supplier.html", s=s, p=s["profile"], tab=tab, cards=db.cards_for(supplier_id),
                 notes=db.notes_for(supplier_id), checks=db.checks_for(supplier_id),
-                catalog_preview=db.catalog_products(supplier_id, None, "", 8)[0])
+                catalog_preview=db.catalog_products(supplier_id, None, "", 8)[0],
+                can_run=runner.available(), run=runner.progress())
 
 
 @app.get("/supplier/{supplier_id}/edit")
