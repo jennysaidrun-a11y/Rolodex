@@ -384,3 +384,41 @@ def test_check_photos_replaces_broken_ones(client, monkeypatch):
     res = catalog.check_photos(sid, minutes=1)
     assert res["broken_replaced"] == 1 and db.catalog_product(sid, "a")["image_url"].endswith("good.jpg")
     assert db.get_supplier(sid)["catalog"]["photos_checked"] == catalog.PHOTO_CHECK_VERSION
+
+
+def test_products_that_share_a_one_liner_get_reviewed(client, capsys):
+    sid = new_supplier()
+    db.save_catalog(sid, {"sections": [], "products": [
+        {"id": "sh-32", "name": "SH-32", "details": "Synthetic air compressor"},
+        {"id": "sh-46", "name": "SH-46", "details": "Synthetic air compressor."},
+        {"id": "ps-1", "name": "PS-1", "details": "View Details"},
+        {"id": "x", "name": "X", "details": "ISO VG 68 PAO compressor oil"}]})
+    assert db.unclear_one_liners(sid) == {"sh-32", "sh-46", "ps-1"}
+    s = db.get_supplier(sid)
+    db.update_supplier(sid, status="active", catalog={**s["catalog"], "reviewed": db.REVIEW_VERSION})
+    assert sid in [x["id"] for x in db.needs_review()]
+    ok, review = run_tasks(capsys, "show", "review", str(sid))
+    missing = {r["id"]: r["missing"] for r in review["products"]}
+    assert "unique one-liner" in missing["sh-32"] and "unique one-liner" not in missing["x"]
+    assert "no two products may share a one-liner" in review["instructions"]
+    f = config.DATA_DIR / "one-liners.json"
+    f.write_text(json.dumps({"products": [{"id": "sh-32", "details": "ISO VG 32 synthetic compressor oil"},
+                                          {"id": "sh-46", "details": "ISO VG 46 synthetic compressor oil"}]}))
+    ok, saved = run_tasks(capsys, "save", "products", str(sid), str(f))
+    assert saved["one_liners_not_unique"] == ["ps-1"]
+    f.write_text(json.dumps({"products": [{"id": "ps-1", "details": "Premium synthetic blend, ISO VG 100"}]}))
+    ok, saved = run_tasks(capsys, "save", "products", str(sid), str(f))
+    assert saved["one_liners_not_unique"] == [] and sid not in [x["id"] for x in db.needs_review()]
+    db.save_catalog(sid, {"sections": [], "products": [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}]})
+    s = db.get_supplier(sid)
+    assert s["catalog"].get("one_liners") != db.ONE_LINER_VERSION or sid not in [x["id"] for x in db.needs_review()]
+
+
+def test_a_catalog_review_doesnt_leave_a_supplier_queued(client, capsys):
+    sid = new_supplier()
+    db.update_supplier(sid, status="active", last_checked="2026-09-25T18:00:00", next_check="2099-01-01")
+    run_tasks(capsys, "progress", str(sid), "1", "3", "Reviewing", "catalog")
+    assert db.get_supplier(sid)["status"] == "active"
+    db.update_supplier(sid, status="queued")   # left over from before this fix
+    db.init()
+    assert db.get_supplier(sid)["status"] == "active"

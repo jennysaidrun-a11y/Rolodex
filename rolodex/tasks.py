@@ -123,10 +123,13 @@ def cmd_show(kind: str, item_id: int) -> None:
             sys.exit(f"No supplier {item_id}.")
         products = db.catalog_products(item_id, None, "", 100000)[0]
         rows = []
+        unclear = db.unclear_one_liners(item_id)
         for p in products:
             missing = [k for k, ok in (("photo", p["image_url"]), ("specs", p["specs"]), ("files", p["files"]),
-                                       ("description", len(p["description"]) > 80)) if not ok]
+                                       ("description", len(p["description"]) > 80),
+                                       ("unique one-liner", p["id"] not in unclear)) if not ok]
             rows.append({"id": p["id"], "name": p["name"], "page_url": p["page_url"], "sku": p["sku"],
+                         "details": p["details"],
                          "has": {"photo": bool(p["image_url"]), "more_photos": len(p["images"]),
                                  "specs": [f"{a}: {b}" for a, b in p["specs"]][:12],
                                  "files": [f["name"] for f in p["files"]], "description_chars": len(p["description"])},
@@ -214,7 +217,10 @@ def cmd_save(kind: str, item_id: int, source: str) -> None:
             fields["status"] = "active"
         db.update_supplier(item_id, **fields)
         db.analysis_finished(item_id)
-        _out({"saved": True, **result})
+        unclear = sorted(db.unclear_one_liners(item_id))
+        _out({"saved": True, **result, "one_liners_not_unique": unclear[:60],
+              **({"next_step": "These products still share a one-liner (details) with another product, or have "
+                               "none: write a unique one for each and save again."} if unclear else {})})
     else:
         sys.exit("save card <id> FILE | save research <id> FILE | save catalog <id> FILE | save products <id> FILE")
 
@@ -270,7 +276,13 @@ REVIEW_INSTRUCTIONS = (
     '"files": [{"name": "Safety data sheet (US)", "url": "https://..."}], "image_url": "...", '
     '"images": [...], "description": "...", "details": "...", "sku": "..."}]} with only the fields '
     "you are adding or correcting (specs and files are added to what's there; image_url, description, "
-    "details and sku replace it). With more than about 40 products, split them between subagents "
+    "details and sku replace it). Every product needs `details`: ONE line (under about 90 characters) "
+    "saying what the item is and what sets it apart from the others in this catalog, so a buyer can "
+    "tell them apart at a glance, e.g. 'ISO VG 46 synthetic rotary-screw compressor oil, NSF H1 food "
+    "grade' vs 'ISO VG 68 PAO compressor oil for high-temperature screw compressors'. Take the "
+    "differences from the page (viscosity grade, base oil, food-grade rating, size, material, pack, "
+    "intended machine); no two products may share a one-liner, and never use button text like 'View "
+    "Details'. Products listed with 'unique one-liner' under `missing` need a new one. With more than about 40 products, split them between subagents "
     "(one batch each, in parallel) and merge their results into one file before saving.")
 
 
@@ -334,7 +346,7 @@ def main(argv: list[str]) -> None:
             if s is None:
                 sys.exit(f"No supplier {supplier_id}.")
             fields = {"progress": {"step": int(step), "of": int(of), "label": " ".join(label)}}
-            if int(step) < int(of) and s["status"] not in ("unread",):
+            if int(step) < int(of) and s["status"] in ("new", "queued", "error"):   # not for a catalog review
                 fields["status"] = "researching"   # until the research is saved
             db.update_supplier(s["id"], **fields)
             _out({"ok": True})
