@@ -19,10 +19,17 @@
     <p class="notice">{{ unread|length }} photo set{{ "s" if unread|length > 1 }} waiting to be read.
       {% if use_api %}Refresh in a moment.{% else %}Claude Code reads {{ "them" if unread|length > 1 else "it" }} and researches the company on the next <strong>/analyze</strong> run.
       You can <a href="/supplier/{{ s.id }}/edit">type details in</a> now if you like.{% endif %}</p>
+    {% if not use_api and not can_run and run.state != "running" %}
+    <form method="post" action="/analysis/start"><input type="hidden" name="return_to" value="/supplier/{{ s.id }}">
+      <button class="btn">Analyze now</button></form>{% endif %}
   {% elif s.status == "researching" and s.progress %}
     <p class="notice">Claude is researching this supplier: {{ s.progress.label }} (step {{ s.progress.step }} of {{ s.progress.of }}).</p>
   {% elif s.status == "queued" and not use_api %}
-    <p class="notice">Queued for research. Tap <strong>Done adding: analyze now</strong> on the Suppliers page, or it's done on the next run.</p>
+    <div class="notice">{% if run.state == "running" %}<p>Queued for research. An analysis is running now; this supplier is in it or goes right after.</p>
+      {% elif not can_run %}<p>Queued for research.</p>
+      <form method="post" action="/analysis/start"><input type="hidden" name="return_to" value="/supplier/{{ s.id }}">
+        <button class="btn">Analyze now</button></form>
+      {% else %}<p>Queued for research. {{ can_run }}</p>{% endif %}</div>
   {% elif s.status in ("queued", "researching") %}
     <p class="notice">Claude is scanning this supplier. This takes a few minutes; refresh the page to see the result.</p>
   {% elif s.status == "error" %}
