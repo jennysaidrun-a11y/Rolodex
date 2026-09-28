@@ -342,15 +342,34 @@ def ask(question: str, suppliers: list[dict], notes: dict[int, list[str]]) -> di
 PRODUCT_ANSWER_SCHEMA = _schema({
     "answer": STR,
     "matches": {"type": "array", "items": _schema({"key": STR, "why": STR})},
+    "follow_up": STR,                                     # "" when no question is needed
+    "options": {"type": "array", "items": STR},           # short likely answers to follow_up
 })
 
 PRODUCT_INSTRUCTIONS = (
-    "You help a commercial bakery's staff find products in their suppliers' catalogs. Every product on "
-    "file is in the catalog list (JSON; key, supplier, section, name, item number, price, details, specs). "
-    "Answer the request using only that list: pick the products that fit best (up to 24, best first), "
-    "one short sentence each on why, and use each product's key exactly as given. Understand what they "
-    "need, not just their words (\"something to wrap pallets\" is stretch film). If nothing fits, say so "
-    "plainly and say what kind of supplier would sell it. Keep the answer to two or three sentences.")
+    "You help a commercial bakery's staff find the exact products they need in their suppliers' catalogs. "
+    "Every product on file is in the catalog list (JSON; key, supplier, section, name, item number, price, "
+    "details, specs). Answer with specific items, never just a company to go look at: pick the products "
+    "that fit best (up to 24, best first), one short sentence each on why (the size, grade or feature that "
+    "fits), and use each product's key exactly as given. Understand what they need, not just their words "
+    "(\"something to wrap pallets\" is stretch film). "
+    "If the request leaves open a choice that changes which item is right and the catalog really has "
+    "different options for it (size or dimensions, material, food-grade / NSF H1, viscosity grade, "
+    "quantity or pack, the machine it's for), ask ONE short follow-up question in `follow_up` with 2 to 5 "
+    "short `options` taken from what the catalog actually offers, and still list the best candidates so "
+    "far. Don't ask when the request is already specific enough, and never ask again about something "
+    "they already answered. If nothing fits, say so plainly and say what kind of supplier would sell it. "
+    "Keep `answer` to two or three sentences.")
+
+
+def product_request(question: str, history: list[dict]) -> str:
+    """The original request plus the follow-up questions already answered, for the next round."""
+    text = question.strip()
+    for h in history:
+        text += f"\nYou asked: {h.get('q', '')}\nThey answered: {h.get('a', '')}"
+    if len(history) >= 3:
+        text += "\n(No more follow-up questions: give your best matches now.)"
+    return text
 
 
 def product_list(products: list[dict]) -> str:

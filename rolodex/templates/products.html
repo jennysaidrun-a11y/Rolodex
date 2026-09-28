@@ -22,9 +22,25 @@
 </section>
 {% if question %}
 <section class="card">
+  {% if history %}
+  <ul class="asked">{% for h in history %}<li><span class="muted">Claude asked:</span> {{ h.q }} <strong>{{ h.a }}</strong></li>{% endfor %}</ul>
+  {% endif %}
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   {% if answer %}<p class="answer">{{ answer }}</p>{% endif %}
+  {% if follow_up %}
+  <form method="post" action="/products/ask" class="follow-up" onsubmit="this.classList.add('busy')">
+    <input type="hidden" name="question" value="{{ question }}">
+    <input type="hidden" name="history" value="{{ history_json }}">
+    <input type="hidden" name="asked" value="{{ follow_up }}">
+    <p class="fq"><strong>To narrow it down:</strong> {{ follow_up }}</p>
+    {% if options %}<div class="options">{% for o in options %}<button class="btn ghost" name="reply" value="{{ o }}">{{ o }}</button>{% endfor %}</div>{% endif %}
+    <div class="ask"><input type="text" name="typed" placeholder="Or type your answer" autocomplete="off">
+      <button class="btn">Answer</button></div>
+    <p class="muted wait">Looking again… (up to a minute)</p>
+  </form>
+  {% endif %}
 </section>
+{% if products %}<h2 class="results-head">{{ "Best matches so far" if follow_up else "Matching products" }}</h2>{% endif %}
 {% elif q %}
 <p class="muted">{{ total }} product{{ "s" if total != 1 }} matching “{{ q }}”</p>
 {% endif %}

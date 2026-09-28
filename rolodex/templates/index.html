@@ -24,9 +24,10 @@
 {% if use_api or not can_run %}
 <section class="card">
   <h2>Ask Claude</h2>
-  <form method="post" action="/ask" class="ask" onsubmit="this.querySelector('button').textContent='Thinking… (up to a minute)'">
+  <p class="muted">Tell Claude what you need and it finds the exact items in every catalog, asking you a question if it needs specifics.</p>
+  <form method="post" action="/products/ask" class="ask" onsubmit="this.querySelector('button').textContent='Thinking… (up to a minute)'">
     <textarea name="question" rows="2" required
-      placeholder="e.g. Who can supply compostable bread bags, SQF certified, delivering to us?"></textarea>
+      placeholder="e.g. food-grade grease for the mixer gearbox, or 1/4 sheet pan liners"></textarea>
     <button class="btn">Ask</button>
   </form>
 </section>

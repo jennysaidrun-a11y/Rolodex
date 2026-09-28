@@ -486,8 +486,19 @@ def product_search(request: Request, q: str = "", page_no: int = Query(1, alias=
 
 
 @app.post("/products/ask")
-async def product_ask(request: Request, question: str = Form(...)):
-    """Search every catalog in plain English: Claude (Sonnet) reads the product list and picks."""
+async def product_ask(request: Request, question: str = Form(...), history: str = Form("[]"),
+                      asked: str = Form(""), reply: str = Form(""), typed: str = Form("")):
+    """Find exact products in every catalog in plain English: Claude (Sonnet) reads the product list,
+    picks items, and asks one follow-up question at a time when it needs specifics (size, grade...)."""
+    import json as _json
+    try:
+        past = [h for h in _json.loads(history) if isinstance(h, dict)][:6]
+    except ValueError:
+        past = []
+    reply = typed.strip() or reply.strip()   # typed answer, or the option button pressed
+    if asked and reply:
+        past.append({"q": asked[:300], "a": reply[:300]})
+    request_text = claude.product_request(question, past)
     products = db.all_catalog_products()
     by_key = {f"{p['supplier_id']}/{p['id']}": p for p in products}
     result, error = {"answer": "", "matches": []}, ""
@@ -495,12 +506,12 @@ async def product_ask(request: Request, question: str = Form(...)):
         error = "There are no catalogs yet. Analyze a supplier first."
     elif config.USE_API:
         try:
-            result = await run_in_threadpool(claude.ask_products, question, products)
+            result = await run_in_threadpool(claude.ask_products, request_text, products)
         except claude.ClaudeError as e:
             error = str(e)
     elif not runner.available():
         try:
-            result = await run_in_threadpool(runner.ask_products, question, claude.product_list(products))
+            result = await run_in_threadpool(runner.ask_products, request_text, claude.product_list(products))
         except RuntimeError as e:
             error = str(e)
     else:
@@ -511,5 +522,8 @@ async def product_ask(request: Request, question: str = Form(...)):
         if key in by_key and key not in seen:
             seen.add(key)
             matches.append(dict(by_key[key], why=str(m.get("why", ""))))
+    follow_up = str(result.get("follow_up") or "").strip() if len(past) < 3 else ""
+    options = [str(o).strip() for o in (result.get("options") or []) if str(o).strip()][:5] if follow_up else []
     return page(request, "products.html", q="", question=question, answer=result.get("answer", ""),
+                history=past, history_json=_json.dumps(past), follow_up=follow_up, options=options,
                 products=matches, total=len(matches), page_no=1, pages=1, error=error)

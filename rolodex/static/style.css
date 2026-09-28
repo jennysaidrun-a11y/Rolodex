@@ -250,3 +250,15 @@ pre.log { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; back
 .doc-page { margin: 0; width: 100%; max-width: 900px; }
 .doc-page img { width: 100%; height: auto; display: block; background: #fff; border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow, 0 1px 3px rgba(0,0,0,.1)); }
 .doc-page figcaption { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 4px; }
+
+/* Ask Claude follow-up questions */
+.asked { list-style: none; padding: 0; margin: 0 0 10px; font-size: .92rem; }
+.asked li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.follow-up { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: var(--proof); border-left: 4px solid var(--oven, #c8911f); }
+.follow-up .fq { margin: 0 0 10px; }
+.follow-up .options { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.follow-up .options .btn { background: var(--card); }
+.follow-up .wait { display: none; margin: 8px 0 0; }
+.follow-up.busy .wait { display: block; }
+.follow-up.busy button { opacity: .5; pointer-events: none; }
+.results-head { margin: 16px 0 8px; }

@@ -230,9 +230,11 @@ def _ask(prompt: str, stdin: str, timeout: int) -> dict:
         result = json.loads(m.group(0)) if m else {"answer": text, "matches": []}
     except ValueError:
         result = {"answer": text, "matches": []}
-    matches = result.get("matches")
+    matches, options = result.get("matches"), result.get("options")
     return {"answer": str(result.get("answer", "")),
-            "matches": [x for x in matches if isinstance(x, dict)] if isinstance(matches, list) else []}
+            "matches": [x for x in matches if isinstance(x, dict)] if isinstance(matches, list) else [],
+            "follow_up": str(result.get("follow_up") or ""),
+            "options": [str(x) for x in options if isinstance(x, (str, int, float))][:5] if isinstance(options, list) else []}
 
 
 def ask(question: str, directory_json: str, timeout: int = 240) -> dict:
@@ -259,7 +261,8 @@ def ask_products(question: str, products_json: str, timeout: int = 240) -> dict:
     from .claude import PRODUCT_INSTRUCTIONS
     prompt = (PRODUCT_INSTRUCTIONS + " The catalog list is given on standard input. Don't use any tools.\n\n"
               'Reply with only a JSON object: {"answer": "<your answer>", "matches": [{"key": "<key>", '
-              '"why": "<one sentence>"}]}\n\nRequest: ' + question)
+              '"why": "<one sentence>"}], "follow_up": "<one question, or empty>", "options": ["<short answer>"]}'
+              '\n\nRequest: ' + question)
     result = _ask(prompt, products_json, timeout)
     result["matches"] = [x for x in result["matches"] if isinstance(x.get("key"), str)]
     return result
