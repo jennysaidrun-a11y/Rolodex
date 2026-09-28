@@ -102,6 +102,16 @@ def login(request: Request, password: str = Form(...)):
 
 # ---------- browse / search / ask ----------
 
+def _with_recent(run: dict) -> dict:
+    """The last run's report shows on the Suppliers page for a day, then only under "Last analysis"."""
+    from datetime import datetime, timedelta
+    try:
+        recent = datetime.now() - datetime.fromisoformat(run.get("finished_at") or "") < timedelta(days=1)
+    except ValueError:
+        recent = False
+    return {**run, "recent": recent}
+
+
 @app.get("/")
 def home(request: Request, q: str = "", category: list[str] = Query([]), attention: bool = False,
          tag: list[str] = Query([])):
@@ -110,7 +120,7 @@ def home(request: Request, q: str = "", category: list[str] = Query([]), attenti
                 selected_tags=tag, tag_counts=db.tag_counts(),
                 filtering=bool(q or category or attention or tag),
                 waiting_cards=len(db.unread_cards()), waiting_scans=len(runner.waiting()[1]),
-                run=runner.progress(), can_run=runner.available(),
+                run=_with_recent(runner.progress()), can_run=runner.available(),
                 attention_count=len(db.search(attention=True)), total=len(db.all_suppliers()))
 
 
