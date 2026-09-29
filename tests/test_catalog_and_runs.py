@@ -174,7 +174,7 @@ run("finish", "Researched 1 supplier.")
     client.post("/analysis/start", data={"return_to": "/"})
     assert wait_for(lambda: (db.get_supplier(sid)["progress"] or {}).get("label") == "Pricing")
     p = client.get("/analysis").json()
-    assert p["state"] == "running" and p["total"] == 1 and 0 < p["percent"] < 100 and p["steps"][0]["label"] == "Pricing"
+    assert p["state"] == "running" and p["total"] == 1 and p["percent"] == 17 and p["steps"][0]["label"] == "Pricing"
     assert 'id="runbar" data-state="running"' in client.get("/").text
     (tmp_path / "go").touch()
     assert wait_for(lambda: client.get("/analysis").json()["state"] == "done")
