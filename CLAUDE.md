@@ -28,7 +28,8 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
 - **Duplicate gates**: a photo whose file was already added (card photos are named by a hash of the
   uploaded file) is skipped on upload; a repeat card for a supplier researched within `FRESH_DAYS`
   is filed without another research run. Analysis runs on `config.ANALYSIS_MODEL` (Sonnet), and the
-  catalog review opens only product pages with something missing.
+  catalog review reads every product page through `catalog.digest` (pages fetched 6 at a time, each
+  boiled down to its text, spec rows, document links and photos) instead of Claude opening them one by one.
 - **Repeat cards** never create duplicates: `tasks save card` merges a card whose company matches an
   existing supplier (`db.possible_duplicates`: name without Inc/LLC, website or company-email domain,
   phone) into it and queues that supplier for a "what's new since last_checked" check.

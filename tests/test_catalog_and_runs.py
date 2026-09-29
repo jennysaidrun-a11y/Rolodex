@@ -1,5 +1,6 @@
 """Catalogs (the store-style browser), repeat cards, Claude Code runs and saving to GitHub."""
 
+import io
 import json
 import os
 import stat
@@ -520,3 +521,30 @@ def test_a_repeat_card_for_a_freshly_researched_supplier_isnt_researched_again(c
     ok, out = run_tasks(capsys, "save", "card", str(card_id), "-", monkeypatch=monkeypatch,
                         stdin={**CARD, "company": "Bag Co", "website": "bags.example"})
     assert ok and out["next_step"] == f"show research {sid}" and db.get_supplier(sid)["status"] == "queued"
+
+
+def test_page_digests_read_every_product_page(client, monkeypatch):
+    sid = new_supplier()
+    db.save_catalog(sid, CATALOG)
+    page = """<html><body><nav><a href="/menu">Menu</a></nav><main><h1>Bread bag {n} in</h1>
+      <p>Clear bread bag for 1 lb loaves.</p><table><tr><th>Width</th><td>{n} in</td></tr></table>
+      <div class="tabs"><a href="/files/SDS_bag_{n}_US_EN.pdf">Safety data sheet (EN, United States)</a></div>
+      <img src="/img/bag{n}.jpg" alt="Bread bag {n} in"></main><footer>Contact us</footer></body></html>"""
+
+    class Resp(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+
+    def fake_open(req, timeout=0):
+        url = req.full_url if hasattr(req, "full_url") else req
+        if url.endswith("robots.txt"):
+            return Resp(b"")
+        n = url.rstrip("/").rsplit("/", 1)[-1]
+        return Resp(page.replace("{n}", n).encode())
+    monkeypatch.setattr(catalog.urllib.request, "urlopen", fake_open)
+    monkeypatch.setattr(catalog, "DELAY", 0)
+    rows = catalog.digest(sid, 0, 40)
+    assert len(rows) == 40 and all("error" not in r for r in rows)
+    r = next(r for r in rows if r["id"] == "BB-7")
+    assert "Clear bread bag" in r["text"] and "Width | 7 in" in r["text"] and "Menu" not in r["text"]
+    assert r["files"][0]["url"] == "https://bags.example/files/SDS_bag_7_US_EN.pdf"
