@@ -71,6 +71,9 @@ def start(trigger: str = "button") -> str:
         if not cards and not research:
             return "Nothing is waiting to be analyzed."
         planned = list(dict.fromkeys([c["supplier_id"] for c in cards] + [s["id"] for s in research]))
+        global _continues
+        if trigger != "continue":
+            _continues = 0
         db.update_analysis(state="running", started_at=db.now(), finished_at=None, planned=planned, finished=[],
                            current="", summary="", trigger=trigger)
         cmd = [config.CLAUDE_COMMAND, "-p", PROMPT, "--output-format", "stream-json", "--verbose",
@@ -107,6 +110,28 @@ def _watch(proc: subprocess.Popen, log_file) -> None:
         gitsync.request()
     except Exception:
         pass
+    _continue_if_unfinished(code, a)
+
+
+MAX_CONTINUES = 5
+_continues = 0
+
+
+def _continue_if_unfinished(code: int, a: dict) -> None:
+    """Claude Code sometimes stops after one or two suppliers of a long run and reports it done. If it
+    finished cleanly, got at least one supplier done and work is still waiting, carry on with a new run by itself
+    (a few times in a row at most, so a supplier it can't finish doesn't loop forever)."""
+    global _continues
+    a = db.analysis()
+    cards, research = waiting()
+    left = {c["supplier_id"] for c in cards} | {s["id"] for s in research}
+    progressed = set(a["planned"]) - left
+    if code != 0 or a["state"] != "done" or not left or not progressed or _continues >= MAX_CONTINUES:
+        _continues = 0
+        return
+    _continues += 1
+    if start("continue"):
+        _continues = 0
 
 
 def _log_tail(limit: int = 12000) -> str:

@@ -16,7 +16,8 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
   `.claude/skills/analyze/SKILL.md`, which works only through `python -m rolodex.tasks` and
   `python -m rolodex.catalog`, and reports progress with `tasks begin/current/progress/finish`
   (the `analysis` table and `suppliers.progress` drive the progress bar; Cancel kills the process
-  group). **Ask Claude** also goes through `runner.ask` (directory JSON on stdin), and **Ask Claude**
+  group). When Claude Code stops cleanly with suppliers still waiting and at least one done, the runner starts
+  another run by itself (`runner._continue_if_unfinished`, up to `MAX_CONTINUES` in a row). **Ask Claude** also goes through `runner.ask` (directory JSON on stdin), and **Ask Claude**
   on the Products page (`/products/ask`) through `runner.ask_products` (every catalog product,
   compact, on stdin; answers with product keys). Both use `config.SEARCH_MODEL` (Sonnet). `api`
   mode calls the Claude API from `rolodex/claude.py` instead.
