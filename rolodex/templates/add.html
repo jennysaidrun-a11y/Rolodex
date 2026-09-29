@@ -20,8 +20,15 @@
       <label><input type="radio" name="kind" value="pamphlet"> Pamphlet / brochure</label>
     </div>
 
+    {% if not use_api %}
+    <label class="btn big pick-many">Choose from camera roll
+      <span class="muted">pick as many as you like, one company per photo</span>
+      <input type="file" name="many" accept="image/*" multiple>
+    </label>
+    <p class="or muted">or take them one at a time</p>
+    {% endif %}
     <label class="photo"><span data-kind="card">Front of card</span><span data-kind="pamphlet" hidden>Front cover of the pamphlet</span>
-      <input type="file" name="front" accept="image/*" required>
+      <input type="file" name="front" accept="image/*">
     </label>
     <label class="photo" data-kind="card">Back of card <span class="muted">(if it has anything on it)</span>
       <input type="file" name="back" accept="image/*">
@@ -36,19 +43,6 @@
     <button class="btn ghost big" name="then" value="">Save &amp; open it</button>
     {% endif %}
   </form>
-  {% if not use_api and not supplier %}
-  <details class="many">
-    <summary>Several at once (photos from your library)</summary>
-    <form method="post" action="/add" enctype="multipart/form-data">
-      <input type="hidden" name="added" value="{{ added }}">
-      <p class="muted">Pick photos of several business cards or pamphlet covers, one company per photo.</p>
-      <label class="photo">Photos <input type="file" name="many" accept="image/*" multiple required></label>
-      <div class="kind-switch"><label><input type="radio" name="kind" value="card" checked> Business cards</label>
-        <label><input type="radio" name="kind" value="pamphlet"> Pamphlet covers</label></div>
-      <button class="btn big">Add them all</button>
-    </form>
-  </details>
-  {% endif %}
   <p class="muted">Tip: lay it flat on a dark surface and fill the frame. You can take a photo or choose one
     from your phone's library.
     {% if use_api %}Claude reads it in a few seconds; you check the details, then it researches the company.
@@ -64,7 +58,19 @@
     if (kind !== "card") form.querySelector("input[name=back]").value = "";
   };
   form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
+  const many = form.querySelector("input[name=many]");
+  if (many) many.addEventListener("change", () => {
+    // photos picked from the library are saved right away, one company each
+    if (!many.files.length) return;
+    const h = document.createElement("input"); h.type = "hidden"; h.name = "then"; h.value = "another"; form.append(h);
+    form.querySelectorAll("button").forEach(x => x.disabled = true);
+    many.closest("label").firstChild.textContent = `Saving ${many.files.length} photo${many.files.length > 1 ? "s" : ""}… `;
+    form.submit();
+  });
   form.addEventListener("submit", (e) => {
+    if (!form.querySelector("input[name=front]").files.length) {
+      e.preventDefault(); alert("Please add a photo of the front first."); return;
+    }
     const b = e.submitter || form.querySelector("button");
     // Keep the pressed button's value (disabling it would drop it from the form).
     if (b.name) { const h = document.createElement("input"); h.type = "hidden"; h.name = b.name; h.value = b.value; form.append(h); }

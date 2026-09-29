@@ -266,6 +266,15 @@ def test_add_card_after_card(client):
     unread = db.unread_cards()
     assert len(unread) == 3 and len({c["supplier_id"] for c in unread}) == 3
     assert sorted(c["kind"] for c in unread) == ["card", "pamphlet", "pamphlet"]
+    page = client.get("/add").text
+    assert "Choose from camera roll" in page and 'name="many" accept="image/*" multiple' in page
+    # several photos picked on a supplier's page all go onto that supplier
+    sid = new_supplier()
+    r = client.post("/add", data={"kind": "card", "supplier": str(sid), "then": "another", "added": "0"},
+                    files=[("many", ("c.jpg", photo(), "image/jpeg")), ("many", ("d.jpg", photo(), "image/jpeg"))],
+                    follow_redirects=False)
+    assert r.headers["location"] == f"/add?added=2&supplier={sid}"
+    assert len(db.cards_for(sid)) == 2 and len(db.unread_cards()) == 5
 
 
 def test_ask_uses_claude_code(client, tmp_path, monkeypatch):
