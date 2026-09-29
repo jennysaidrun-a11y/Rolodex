@@ -9,7 +9,10 @@ main() {
   cd "$(dirname "$0")/.." || exit 1
   local pidfile=/tmp/rolodex-start.pid
   local old; old=$(cat "$pidfile" 2>/dev/null)
-  [ -n "$old" ] && [ "$old" != "$$" ] && kill "$old" 2>/dev/null   # an older copy of this script
+  if [ -n "$old" ] && [ "$old" != "$$" ]; then   # an older copy of this script and its restart loop
+    pkill -P "$old" 2>/dev/null
+    kill "$old" 2>/dev/null
+  fi
   echo $$ > "$pidfile"
   stop_app
   get_updates
@@ -59,6 +62,12 @@ start_app() {
 stop_app() {
   [ -n "$APP" ] && kill "$APP" 2>/dev/null
   pkill -f "uvicorn rolodex.app:app" 2>/dev/null
+  # wait for port 8000 to be free (an old copy can take a moment to let go)
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "uvicorn rolodex.app:app" >/dev/null || break
+    sleep 1
+  done
+  pkill -9 -f "uvicorn rolodex.app:app" 2>/dev/null
   sleep 1
 }
 
