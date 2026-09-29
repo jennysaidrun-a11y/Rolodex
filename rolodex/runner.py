@@ -98,6 +98,7 @@ def start(trigger: str = "button") -> str:
             return f"Couldn't start Claude Code: {e}"
         db.update_analysis(pid=_proc.pid)
         threading.Thread(target=_watch, args=(_proc, log_file), daemon=True).start()
+        threading.Thread(target=_close_when_done, args=(_proc,), daemon=True).start()
         return ""
 
 
@@ -142,6 +143,37 @@ def _continue_if_unfinished(code: int, a: dict) -> None:
     _continues += 1
     if start("continue"):
         _continues = 0
+
+
+IDLE_CHECK_SECONDS = 30
+IDLE_DONE_SECONDS = 300
+
+
+def _close_when_done(proc: subprocess.Popen) -> None:
+    """Claude Code sometimes lingers after the last supplier is saved (waiting on a helper, or
+    re-checking). Once every planned supplier is finished and nothing else is waiting for a few
+    minutes, end the session and mark the run done, so the bar never sits at "13 of 13"."""
+    import time
+    idle_since = None
+    while proc.poll() is None:
+        time.sleep(IDLE_CHECK_SECONDS)
+        try:
+            a = db.analysis()
+            done = a["state"] == "running" and set(a["planned"]) <= set(a["finished"]) and not any(waiting())
+        except Exception:
+            log.exception("idle check")
+            continue
+        if not done:
+            idle_since = None
+            continue
+        idle_since = idle_since or time.time()
+        if time.time() - idle_since >= IDLE_DONE_SECONDS and proc.poll() is None:
+            db.update_analysis(state="done", finished_at=db.now(), current="", summary=a["summary"] or _summary(a))
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except OSError:
+                proc.terminate()
+            return
 
 
 def _log_tail(limit: int = 12000) -> str:
