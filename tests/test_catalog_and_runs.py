@@ -574,3 +574,28 @@ def test_security_gate_for_web_reads(tmp_path, monkeypatch):
     # the unattended Claude Code session can't run curl or read the database
     assert not any(t.startswith("Bash(curl") for t in runner.ALLOWED_TOOLS) and "Bash(curl:*)" in runner.DENIED_TOOLS
     assert "Read" not in runner.ALLOWED_TOOLS and "Read(./data/*.db)" in runner.DENIED_TOOLS
+
+
+def test_a_finished_run_that_lingers_is_closed(client, tmp_path, monkeypatch):
+    sid = new_supplier()
+    db.update_supplier(sid, status="queued", next_check="2026-01-01")
+    monkeypatch.setattr(runner, "IDLE_CHECK_SECONDS", 0.2)
+    monkeypatch.setattr(runner, "IDLE_DONE_SECONDS", 0.5)
+    monkeypatch.setenv("ROLODEX_DATA_DIR", str(config.DATA_DIR))
+    # a stand-in for Claude Code that finishes the supplier, then just sits there
+    script = f"""
+import json, subprocess, sys, time
+run = lambda *a: subprocess.run([sys.executable, "-m", "rolodex.tasks", *a], check=True, capture_output=True)
+run("begin"); run("current", "{sid}")
+open("research.json", "w").write({json.dumps(json.dumps(RESEARCH))})
+run("save", "research", "{sid}", "research.json")
+subprocess.run([sys.executable, "-c", "from rolodex import db; db.init(); db.analysis_finished({sid})"], check=True)
+time.sleep(60)
+"""
+    monkeypatch.setattr(config, "CLAUDE_COMMAND", fake_claude(tmp_path, script))
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    (tmp_path / "rolodex").symlink_to(os.path.join(os.path.dirname(__file__), "..", "rolodex"))
+    client.post("/analysis/start", data={"return_to": "/"})
+    assert wait_for(lambda: not runner.running(), 20)
+    p = client.get("/analysis").json()
+    assert p["state"] == "done" and p["done"] == 1
