@@ -175,7 +175,9 @@ run("finish", "Researched 1 supplier.")
     assert wait_for(lambda: (db.get_supplier(sid)["progress"] or {}).get("label") == "Pricing")
     p = client.get("/analysis").json()
     assert p["state"] == "running" and p["total"] == 1 and p["percent"] == 17 and p["steps"][0]["label"] == "Pricing"
+    assert p["eta"] == "working out time left"
     assert 'id="runbar" data-state="running"' in client.get("/").text
+    assert runner._eta("2000-01-01T00:00:00", 50).endswith("hours left") and runner._eta(db.now(), 50) == "working out time left"
     (tmp_path / "go").touch()
     assert wait_for(lambda: client.get("/analysis").json()["state"] == "done")
     p = client.get("/analysis").json()
@@ -267,7 +269,7 @@ def test_add_card_after_card(client):
     assert len(unread) == 3 and len({c["supplier_id"] for c in unread}) == 3
     assert sorted(c["kind"] for c in unread) == ["card", "pamphlet", "pamphlet"]
     page = client.get("/add").text
-    assert "Choose from camera roll" in page and 'name="many" accept="image/*" multiple' in page
+    assert "Add photos" in page and 'name="front"' not in page and 'name="many" accept="image/*" multiple' in page
     # several photos picked on a supplier's page all go onto that supplier
     sid = new_supplier()
     r = client.post("/add", data={"kind": "card", "supplier": str(sid), "then": "another", "added": "0"},

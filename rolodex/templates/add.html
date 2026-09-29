@@ -20,31 +20,29 @@
       <label><input type="radio" name="kind" value="pamphlet"> Pamphlet / brochure</label>
     </div>
 
-    {% if not use_api %}
-    <label class="btn big pick-many">Choose from camera roll
-      <span class="muted">pick as many as you like, one company per photo</span>
-      <input type="file" name="many" accept="image/*" multiple>
-    </label>
-    <p class="or muted">or take them one at a time</p>
-    {% endif %}
+    {% if use_api %}
     <label class="photo"><span data-kind="card">Front of card</span><span data-kind="pamphlet" hidden>Front cover of the pamphlet</span>
-      <input type="file" name="front" accept="image/*">
+      <input type="file" name="front" accept="image/*" required>
     </label>
     <label class="photo" data-kind="card">Back of card <span class="muted">(if it has anything on it)</span>
       <input type="file" name="back" accept="image/*">
     </label>
+    {% else %}
+    <label class="btn big pick-many">Add photos
+      <span class="muted">take one, or pick as many as you like from your camera roll
+        {% if supplier %}(all go onto {{ supplier.company }}){% else %}(one company per photo){% endif %}</span>
+      <input type="file" name="many" accept="image/*" multiple>
+    </label>
+    {% endif %}
     <p class="muted" data-kind="pamphlet" hidden>Just the cover. Claude finds the full PDF version online
       (usually on the supplier's website) and saves a copy with the supplier.</p>
 
     <input type="hidden" name="added" value="{{ added }}">
-    {% if use_api %}<button class="btn big">Read it</button>
-    {% else %}
-    <button class="btn big" name="then" value="another">Save &amp; add another</button>
-    <button class="btn ghost big" name="then" value="">Save &amp; open it</button>
-    {% endif %}
+    {% if use_api %}<button class="btn big">Read it</button>{% endif %}
   </form>
-  <p class="muted">Tip: lay it flat on a dark surface and fill the frame. You can take a photo or choose one
-    from your phone's library.
+  <p class="muted">Tip: lay it flat on a dark surface and fill the frame.
+    {% if not use_api and not supplier %}If the back of a card has something important on it, add that photo
+    from the supplier's page once it's in.{% endif %}
     {% if use_api %}Claude reads it in a few seconds; you check the details, then it researches the company.
     {% else %}Photos are saved right away. When you've added them all, tap <strong>Done adding: analyze now</strong>
     and Claude reads them, researches each company and copies its catalog.{% endif %}</p>
@@ -55,20 +53,53 @@
   const show = () => {
     const kind = form.querySelector("input[name=kind]:checked").value;
     form.querySelectorAll("[data-kind]").forEach(el => { el.hidden = el.dataset.kind !== kind; });
-    if (kind !== "card") form.querySelector("input[name=back]").value = "";
+    const back = form.querySelector("input[name=back]");
+    if (kind !== "card" && back) back.value = "";
   };
   form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
   const many = form.querySelector("input[name=many]");
-  if (many) many.addEventListener("change", () => {
-    // photos picked from the library are saved right away, one company each
-    if (!many.files.length) return;
-    const h = document.createElement("input"); h.type = "hidden"; h.name = "then"; h.value = "another"; form.append(h);
-    form.querySelectorAll("button").forEach(x => x.disabled = true);
-    many.closest("label").firstChild.textContent = `Saving ${many.files.length} photo${many.files.length > 1 ? "s" : ""}… `;
-    form.submit();
+  // Shrink a photo on the phone (a full-size iPhone photo is several MB) before sending it.
+  const shrink = async (file) => {
+    try {
+      const img = await createImageBitmap(file, {imageOrientation: "from-image"});
+      const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+      return blob ? new File([blob], (file.name || "photo").replace(/\.\w+$/, "") + ".jpg", {type: "image/jpeg"}) : file;
+    } catch (e) { return file; }   // can't read it here: send it as is
+  };
+  if (many) many.addEventListener("change", async () => {
+    // photos are saved right away, one company each, a few at a time so a big batch never fails
+    const files = [...many.files];
+    if (!files.length) return;
+    const label = many.closest("label").firstChild;
+    many.disabled = true;
+    const kind = form.querySelector("input[name=kind]:checked").value;
+    const supplier = form.querySelector("input[name=supplier]");
+    let saved = 0, failed = 0;
+    for (let i = 0; i < files.length; i += 3) {
+      label.textContent = `Saving ${Math.min(i + 3, files.length)} of ${files.length}… `;
+      const data = new FormData();
+      data.append("kind", kind); data.append("then", "another"); data.append("added", "0");
+      if (supplier) data.append("supplier", supplier.value);
+      const batch = await Promise.all(files.slice(i, i + 3).map(shrink));
+      batch.forEach(f => data.append("many", f));
+      try {
+        const r = await fetch("/add", {method: "POST", body: data});
+        if (!r.ok) throw new Error(r.status);
+        saved += batch.length;
+      } catch (e) { failed += batch.length; }
+    }
+    const q = new URLSearchParams({added: {{ added }} + saved});
+    if (supplier) q.set("supplier", supplier.value);
+    if (failed) q.set("msg", `${failed} photo${failed > 1 ? "s" : ""} didn't save. Please add ${failed > 1 ? "them" : "it"} again.`);
+    location.href = "/add?" + q;
   });
   form.addEventListener("submit", (e) => {
-    if (!form.querySelector("input[name=front]").files.length) {
+    const front = form.querySelector("input[name=front]");
+    if (front && !front.files.length) {
       e.preventDefault(); alert("Please add a photo of the front first."); return;
     }
     const b = e.submitter || form.querySelector("button");
