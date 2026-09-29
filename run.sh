@@ -1,7 +1,13 @@
 #!/usr/bin/env sh
-# Start the rolodex on port 8000 (Linux / macOS).
+# Start the rolodex on this computer (Linux / macOS), then open http://localhost:8000.
+# It gets the latest version from GitHub, keeps itself up to date (tools/start_local.py)
+# and saves your data to GitHub every few minutes.
 cd "$(dirname "$0")"
 [ -d .venv ] || python3 -m venv .venv
 . .venv/bin/activate
-pip install -q -r requirements.txt
-exec uvicorn rolodex.app:app --host 0.0.0.0 --port "${PORT:-8000}"
+while :; do
+  python tools/start_local.py update
+  pip install -q -r requirements.txt
+  python tools/start_local.py
+  [ $? -eq 3 ] || break
+done

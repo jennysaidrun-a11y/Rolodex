@@ -9,6 +9,7 @@ Jinja, no JS build step, must stay usable on a phone) on port 8000, with Claude 
 signed in. The company computer can't install anything, so everything is used through the browser.
 The Codespace updates itself: `.devcontainer/start.sh` checks `main` every minute and restarts the
 app when code (anything outside `data/`) changes, so pushing to `main` is how a change goes live.
+On a Windows PC, `run.bat` does the same through `tools/start_local.py` (localhost only, data saved by gitsync).
 
 - **Analysis** (`config.ANALYSIS = "claude-code"`, the default without an API key): the app starts
   Claude Code headless (`rolodex/runner.py`, `claude -p` with a fixed `--allowedTools` list) for
