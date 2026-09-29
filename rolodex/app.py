@@ -181,11 +181,15 @@ async def add_card(request: Request, kind: str = Form("card"), supplier: int | N
     kind = "pamphlet" if kind == "pamphlet" else "card"
     many = [u for u in many if u is not None and u.filename]
     if many and not config.USE_API:
+        existing = db.get_supplier(supplier) if supplier else None
         for u in many:
-            sid = db.create_supplier({"company": recheck.PLACEHOLDER_COMPANY})
-            db.update_supplier(sid, status="unread")
+            if existing:   # more photos of this supplier's cards or pamphlets
+                sid = existing["id"]
+            else:
+                sid = db.create_supplier({"company": recheck.PLACEHOLDER_COMPANY})
+                db.update_supplier(sid, status="unread")
             db.add_card(sid, [_save_photo(u)], kind)
-        return back_to("/add?" + urlencode({"added": added + len(many)}))
+        return back_to("/add?" + urlencode({"added": added + len(many), **({"supplier": supplier} if existing else {})}))
     uploads = [u for u in ([front, back] if kind == "card" else [front]) if u is not None and u.filename]
     if not uploads:
         raise HTTPException(400, "Please add a photo.")
