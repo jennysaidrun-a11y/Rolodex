@@ -446,3 +446,29 @@ def test_ask_claude_asks_a_follow_up_question(client, monkeypatch):
     assert asked[-1] == "pallet wrap\nYou asked: What width do you need?\nThey answered: 18 in"
     assert "The 18 in film." in page and "To narrow it down" not in page and "Matching products" in page
     assert "Claude asked:" in page
+
+
+def test_a_run_that_stops_early_carries_on_by_itself(client, tmp_path, monkeypatch):
+    ids = [new_supplier(company=f"Co {i}", website=f"co{i}.example") for i in range(3)]
+    for sid in ids:
+        db.update_supplier(sid, status="queued", next_check="2026-01-01")
+    monkeypatch.setenv("ROLODEX_DATA_DIR", str(config.DATA_DIR))
+    # a stand-in for Claude Code that researches one supplier per run and then stops
+    script = f"""
+import json, os, subprocess, sys
+run = lambda *a: subprocess.run([sys.executable, "-m", "rolodex.tasks", *a], check=True, capture_output=True)
+n = len(open("runs").read()) if os.path.exists("runs") else 0
+open("runs", "a").write("x")
+sid = str({ids}[n])
+run("begin"); run("current", sid)
+open("research.json", "w").write({json.dumps(json.dumps(RESEARCH))})
+run("save", "research", sid, "research.json")
+run("finish", "Researched 1 supplier.")
+"""
+    monkeypatch.setattr(config, "CLAUDE_COMMAND", fake_claude(tmp_path, script))
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    (tmp_path / "rolodex").symlink_to(os.path.join(os.path.dirname(__file__), "..", "rolodex"))
+    client.post("/analysis/start", data={"return_to": "/"})
+    assert wait_for(lambda: all(db.get_supplier(i)["status"] == "active" for i in ids), 30)
+    assert wait_for(lambda: not runner.running(), 10)
+    assert (tmp_path / "runs").read_text() == "xxx"
