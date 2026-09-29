@@ -541,10 +541,36 @@ def test_page_digests_read_every_product_page(client, monkeypatch):
             return Resp(b"")
         n = url.rstrip("/").rsplit("/", 1)[-1]
         return Resp(page.replace("{n}", n).encode())
-    monkeypatch.setattr(catalog.urllib.request, "urlopen", fake_open)
+    monkeypatch.setattr(catalog, "_open", fake_open)
+    monkeypatch.setattr(catalog, "_public", lambda url: True)
     monkeypatch.setattr(catalog, "DELAY", 0)
     rows = catalog.digest(sid, 0, 40)
     assert len(rows) == 40 and all("error" not in r for r in rows)
     r = next(r for r in rows if r["id"] == "BB-7")
     assert "Clear bread bag" in r["text"] and "Width | 7 in" in r["text"] and "Menu" not in r["text"]
     assert r["files"][0]["url"] == "https://bags.example/files/SDS_bag_7_US_EN.pdf"
+
+
+def test_security_gate_for_web_reads(tmp_path, monkeypatch):
+    # only public web pages; nothing on this computer or the local network, redirects included
+    for url in ("http://127.0.0.1:8000/", "http://localhost/", "http://192.168.1.10/", "file:///etc/passwd",
+                "http://169.254.169.254/latest/meta-data/"):
+        assert catalog.fetch_page(url) == {"ok": False, "error": "Only public web pages can be read."}
+    with pytest.raises(PermissionError):
+        catalog.Site.__new__(catalog.Site).get.__func__(
+            type("S", (), {"robots": type("R", (), {"can_fetch": lambda *a: True})(), "last": 0, "requests": 0})(),
+            "http://10.0.0.5/products")
+    # pages are only saved inside work/
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(catalog, "_public", lambda url: True)
+
+    class Resp(io.BytesIO):
+        headers = {"Content-Type": "text/html"}
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+    monkeypatch.setattr(catalog, "_open", lambda req, timeout=0: Resp(b"<html>hi</html>"))
+    assert catalog.fetch_page("https://x.example/", out="../elsewhere.html")["ok"] is False
+    assert catalog.fetch_page("https://x.example/", out="work/p.html") == {"ok": True, "file": "work/p.html", "chars": 15}
+    # the unattended Claude Code session can't run curl or read the database
+    assert not any(t.startswith("Bash(curl") for t in runner.ALLOWED_TOOLS) and "Bash(curl:*)" in runner.DENIED_TOOLS
+    assert "Read" not in runner.ALLOWED_TOOLS and "Read(./data/*.db)" in runner.DENIED_TOOLS

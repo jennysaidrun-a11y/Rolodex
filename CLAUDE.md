@@ -25,6 +25,12 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
   `research_prompt`, `card_schema`, `research_schema`), shared by both modes; saving goes through
   `recheck.save_reading` / `save_research`. If you add a profile field, add it to the research
   schema, `supplier.html` and `claude.directory`.
+- **Security gate** (it's meant to run on a work PC): the headless analysis gets only `runner.ALLOWED_TOOLS`
+  (rolodex commands, WebSearch/WebFetch, Read of `work/` and `data/cards/`, writes in `work/`) and
+  `DENIED_TOOLS` (curl/wget/shells, the database, `.env`, code). Claude reads pages only through
+  `catalog fetch` / `digest` / `photos`; every server-side fetch (crawler, digests, images, docs,
+  pamphlet PDFs) goes through `images._public_host` + `_opener`: public internet only, redirects
+  included. Never add `Bash(curl:*)` or a bare `Read` back.
 - **Duplicate gates**: a photo whose file was already added (card photos are named by a hash of the
   uploaded file) is skipped on upload; a repeat card for a supplier researched within `FRESH_DAYS`
   is filed without another research run. Analysis runs on `config.ANALYSIS_MODEL` (Sonnet), and the

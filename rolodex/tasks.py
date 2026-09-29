@@ -274,7 +274,7 @@ REVIEW_INSTRUCTIONS = (
     "It fetches the pages several at a time and writes each page's full text (tabs and accordions "
     "included), spec tables, every document link and its photos. Read all of it. Open a page_url "
     "yourself only for the products it lists under `open_yourself` (little text in the page, or it "
-    "couldn't be read), or when something the page mentions loads from another URL. For those pages (curl -sL -A 'Mozilla/5.0' --max-time 20; WebFetch "
+    "couldn't be read), or when something the page mentions loads from another URL. For those pages (python -m rolodex.catalog fetch '<url>' --out work/page.html; WebFetch "
     "drops links and images) and look at everything on it: the product photo(s); the full description; "
     "every specification (dimensions and sizes, weights, capacity, material, colours, pack / case "
     "counts, temperature ranges, viscosity grades, food-grade ratings such as NSF H1, kosher, halal, "
