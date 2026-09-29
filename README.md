@@ -108,7 +108,11 @@ with a cloud routine doing the analysis (`routine/`). Its suppliers were copied 
 
 1. Install Python 3.11 or newer (Windows: from python.org, tick "Add python.exe to PATH").
 2. Download this repository. Copy `.env.example` to `.env` if you want to set anything below.
-3. Double-click `run.bat` (Windows) or run `./run.sh` (Linux). Then open http://localhost:8000.
+3. Double-click `run.bat` (Windows) or run `./run.sh` (Linux). Then open http://localhost:8000 and
+   leave the window open. Like the Codespace, it gets the latest version from GitHub every minute
+   (`tools/start_local.py`) and saves your data to GitHub every few minutes, so download it with
+   `git clone` (not a ZIP). Only that computer can open it; set `ROLODEX_HOST=0.0.0.0` to allow
+   other devices on the same network. Don't run the Codespace at the same time.
 4. For the analysis, install Claude Code on that computer and sign in (`claude`), or set an
    `ANTHROPIC_API_KEY`.
 

@@ -169,10 +169,7 @@ def _close_when_done(proc: subprocess.Popen) -> None:
         idle_since = idle_since or time.time()
         if time.time() - idle_since >= IDLE_DONE_SECONDS and proc.poll() is None:
             db.update_analysis(state="done", finished_at=db.now(), current="", summary=a["summary"] or _summary(a))
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except OSError:
-                proc.terminate()
+            _stop(proc)
             return
 
 
@@ -218,14 +215,22 @@ def _reset_leftovers() -> None:
             db.update_supplier(s["id"], status="queued" if s["status"] == "researching" else s["status"], progress="")
 
 
+def _stop(proc: subprocess.Popen) -> None:
+    """Stop Claude Code and everything it started (its whole process group; on Windows, its tree)."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=30)
+        else:
+            os.killpg(proc.pid, signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError):
+        proc.terminate()
+
+
 def cancel() -> None:
     global _proc
     with _lock:
         if running():
-            try:
-                os.killpg(_proc.pid, signal.SIGTERM)
-            except OSError:
-                _proc.terminate()
+            _stop(_proc)
         db.update_analysis(state="cancelled", finished_at=db.now(), current="",
                            summary="Cancelled. Anything not finished stays queued for the next run.")
     _reset_leftovers()
