@@ -267,7 +267,7 @@ def test_add_card_after_card(client):
     assert len(unread) == 3 and len({c["supplier_id"] for c in unread}) == 3
     assert sorted(c["kind"] for c in unread) == ["card", "pamphlet", "pamphlet"]
     page = client.get("/add").text
-    assert "Choose from camera roll" in page and 'name="many" accept="image/*" multiple' in page
+    assert "Add photos" in page and 'name="front"' not in page and 'name="many" accept="image/*" multiple' in page
     # several photos picked on a supplier's page all go onto that supplier
     sid = new_supplier()
     r = client.post("/add", data={"kind": "card", "supplier": str(sid), "then": "another", "added": "0"},

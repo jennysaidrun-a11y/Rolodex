@@ -20,31 +20,29 @@
       <label><input type="radio" name="kind" value="pamphlet"> Pamphlet / brochure</label>
     </div>
 
-    {% if not use_api %}
-    <label class="btn big pick-many">Choose from camera roll
-      <span class="muted">pick as many as you like, one company per photo</span>
-      <input type="file" name="many" accept="image/*" multiple>
-    </label>
-    <p class="or muted">or take them one at a time</p>
-    {% endif %}
+    {% if use_api %}
     <label class="photo"><span data-kind="card">Front of card</span><span data-kind="pamphlet" hidden>Front cover of the pamphlet</span>
-      <input type="file" name="front" accept="image/*">
+      <input type="file" name="front" accept="image/*" required>
     </label>
     <label class="photo" data-kind="card">Back of card <span class="muted">(if it has anything on it)</span>
       <input type="file" name="back" accept="image/*">
     </label>
+    {% else %}
+    <label class="btn big pick-many">Add photos
+      <span class="muted">take one, or pick as many as you like from your camera roll
+        {% if supplier %}(all go onto {{ supplier.company }}){% else %}(one company per photo){% endif %}</span>
+      <input type="file" name="many" accept="image/*" multiple>
+    </label>
+    {% endif %}
     <p class="muted" data-kind="pamphlet" hidden>Just the cover. Claude finds the full PDF version online
       (usually on the supplier's website) and saves a copy with the supplier.</p>
 
     <input type="hidden" name="added" value="{{ added }}">
-    {% if use_api %}<button class="btn big">Read it</button>
-    {% else %}
-    <button class="btn big" name="then" value="another">Save &amp; add another</button>
-    <button class="btn ghost big" name="then" value="">Save &amp; open it</button>
-    {% endif %}
+    {% if use_api %}<button class="btn big">Read it</button>{% endif %}
   </form>
-  <p class="muted">Tip: lay it flat on a dark surface and fill the frame. You can take a photo or choose one
-    from your phone's library.
+  <p class="muted">Tip: lay it flat on a dark surface and fill the frame.
+    {% if not use_api and not supplier %}If the back of a card has something important on it, add that photo
+    from the supplier's page once it's in.{% endif %}
     {% if use_api %}Claude reads it in a few seconds; you check the details, then it researches the company.
     {% else %}Photos are saved right away. When you've added them all, tap <strong>Done adding: analyze now</strong>
     and Claude reads them, researches each company and copies its catalog.{% endif %}</p>
@@ -55,7 +53,8 @@
   const show = () => {
     const kind = form.querySelector("input[name=kind]:checked").value;
     form.querySelectorAll("[data-kind]").forEach(el => { el.hidden = el.dataset.kind !== kind; });
-    if (kind !== "card") form.querySelector("input[name=back]").value = "";
+    const back = form.querySelector("input[name=back]");
+    if (kind !== "card" && back) back.value = "";
   };
   form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
   const many = form.querySelector("input[name=many]");
@@ -68,7 +67,8 @@
     form.submit();
   });
   form.addEventListener("submit", (e) => {
-    if (!form.querySelector("input[name=front]").files.length) {
+    const front = form.querySelector("input[name=front]");
+    if (front && !front.files.length) {
       e.preventDefault(); alert("Please add a photo of the front first."); return;
     }
     const b = e.submitter || form.querySelector("button");
