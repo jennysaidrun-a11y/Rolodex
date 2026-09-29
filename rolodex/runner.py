@@ -76,7 +76,7 @@ def start(trigger: str = "button") -> str:
             _continues = 0
         db.update_analysis(state="running", started_at=db.now(), finished_at=None, planned=planned, finished=[],
                            current="", summary="", trigger=trigger)
-        cmd = [config.CLAUDE_COMMAND, "-p", PROMPT, "--output-format", "stream-json", "--verbose",
+        cmd = [config.CLAUDE_COMMAND, "-p", PROMPT, "--model", config.ANALYSIS_MODEL, "--output-format", "stream-json", "--verbose",
                "--allowedTools", *ALLOWED_TOOLS]
         env = {**os.environ, "ROLODEX_ANALYSIS": "1"}
         log_file = open(LOG(), "w", encoding="utf-8")

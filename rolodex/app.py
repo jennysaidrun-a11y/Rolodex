@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hmac
+import hashlib
 import io
 import logging
 import os
@@ -152,22 +153,36 @@ async def ask(request: Request, question: str = Form(...)):
 
 # ---------- adding a card ----------
 
-def _save_photo(upload: UploadFile) -> str:
-    """Store a card photo as an upright JPEG, at most 1600 px on the long side."""
+def _open_photo(upload: UploadFile) -> tuple[Image.Image, str]:
+    """The photo, upright and at most 1600 px on the long side, and its file name: a fingerprint of
+    the uploaded file, so the same photo added twice gets the same name."""
+    data = upload.file.read()
     try:
-        img = Image.open(io.BytesIO(upload.file.read()))
+        img = Image.open(io.BytesIO(data))
         img = ImageOps.exif_transpose(img).convert("RGB")
     except (UnidentifiedImageError, OSError):
         raise HTTPException(400, f"Couldn't open the photo '{upload.filename}'. Please use a JPEG or PNG.")
     img.thumbnail((1600, 1600))
-    name = f"{uuid.uuid4().hex}.jpg"
+    return img, f"p{hashlib.sha256(data).hexdigest()[:32]}.jpg"
+
+
+def _save_photo(upload: UploadFile | tuple[Image.Image, str]) -> str:
+    """Store a card photo as an upright JPEG, at most 1600 px on the long side."""
+    img, name = upload if isinstance(upload, tuple) else _open_photo(upload)
     img.save(config.CARDS_DIR / name, "JPEG", quality=85)
     return name
 
 
+def _is_duplicate(name: str) -> bool:
+    """Duplicate gate: the same photo added again (picked twice from the camera roll) is skipped,
+    so Claude never reads it twice."""
+    return (config.CARDS_DIR / name).exists()
+
+
 @app.get("/add")
-def add_form(request: Request, supplier: int | None = None, added: int = 0):
+def add_form(request: Request, supplier: int | None = None, added: int = 0, skipped: int = 0):
     return page(request, "add.html", supplier=db.get_supplier(supplier) if supplier else None, added=added,
+                skipped=skipped,
                 can_run=runner.available())
 
 
@@ -182,14 +197,21 @@ async def add_card(request: Request, kind: str = Form("card"), supplier: int | N
     many = [u for u in many if u is not None and u.filename]
     if many and not config.USE_API:
         existing = db.get_supplier(supplier) if supplier else None
+        saved = skipped = 0
         for u in many:
+            img = _open_photo(u)
+            if _is_duplicate(img[1]):
+                skipped += 1
+                continue
             if existing:   # more photos of this supplier's cards or pamphlets
                 sid = existing["id"]
             else:
                 sid = db.create_supplier({"company": recheck.PLACEHOLDER_COMPANY})
                 db.update_supplier(sid, status="unread")
-            db.add_card(sid, [_save_photo(u)], kind)
-        return back_to("/add?" + urlencode({"added": added + len(many), **({"supplier": supplier} if existing else {})}))
+            db.add_card(sid, [_save_photo(img)], kind)
+            saved += 1
+        return back_to("/add?" + urlencode({"added": added + saved, **({"skipped": skipped} if skipped else {}),
+                                            **({"supplier": supplier} if existing else {})}))
     uploads = [u for u in ([front, back] if kind == "card" else [front]) if u is not None and u.filename]
     if not uploads:
         raise HTTPException(400, "Please add a photo.")

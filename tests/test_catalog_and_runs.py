@@ -483,3 +483,40 @@ run("finish", "Researched 1 supplier.")
     assert wait_for(lambda: all(db.get_supplier(i)["status"] == "active" for i in ids), 30)
     assert wait_for(lambda: not runner.running(), 10)
     assert (tmp_path / "runs").read_text() == "xxx"
+
+
+def test_the_same_photo_twice_is_skipped(client):
+    from PIL import Image, ImageDraw
+    import io as _io
+
+    def card(text):
+        img = Image.new("RGB", (800, 480), "white")
+        ImageDraw.Draw(img).rectangle((40, 40, 300 + 40 * len(text), 200), fill="black")
+        ImageDraw.Draw(img).ellipse((500, 250, 760 - 20 * len(text), 440), fill="gray")
+        b = _io.BytesIO(); img.save(b, "JPEG"); return b.getvalue()
+    a, b = card("A"), card("BBBB")
+    r = client.post("/add", data={"kind": "card", "added": "0"}, follow_redirects=False,
+                    files=[("many", ("a.jpg", a, "image/jpeg")), ("many", ("b.jpg", b, "image/jpeg")),
+                           ("many", ("a2.jpg", a, "image/jpeg"))])
+    assert r.headers["location"] == "/add?added=2&skipped=1"
+    r = client.post("/add", data={"kind": "card", "added": "0"}, follow_redirects=False,
+                    files=[("many", ("b.jpg", b, "image/jpeg"))])
+    assert r.headers["location"] == "/add?added=0&skipped=1"
+    assert len(db.unread_cards()) == 2
+    assert "1 skipped: already in the rolodex" in client.get("/add?added=0&skipped=1").text
+
+
+def test_a_repeat_card_for_a_freshly_researched_supplier_isnt_researched_again(client, capsys, monkeypatch):
+    from datetime import date
+    sid = new_supplier(company="Bag Co", website="bags.example")
+    db.update_supplier(sid, last_checked=date.today().isoformat() + "T08:00:00", next_check="2099-01-01")
+    card_id = db.add_card(db.create_supplier({"company": "(reading)"}), ["x.jpg"], "card")
+    ok, out = run_tasks(capsys, "save", "card", str(card_id), "-", monkeypatch=monkeypatch,
+                        stdin={**CARD, "company": "Bag Co Inc", "website": "bags.example"})
+    assert ok and "nothing more to do" in out["next_step"] and db.get_supplier(sid)["status"] == "active"
+    # a supplier last researched long ago is refreshed as before
+    db.update_supplier(sid, last_checked="2020-01-01T08:00:00")
+    card_id = db.add_card(db.create_supplier({"company": "(reading)"}), ["y.jpg"], "card")
+    ok, out = run_tasks(capsys, "save", "card", str(card_id), "-", monkeypatch=monkeypatch,
+                        stdin={**CARD, "company": "Bag Co", "website": "bags.example"})
+    assert ok and out["next_step"] == f"show research {sid}" and db.get_supplier(sid)["status"] == "queued"
