@@ -24,13 +24,23 @@ _proc: subprocess.Popen | None = None
 PROMPT = ("Run the rolodex analysis: follow .claude/skills/analyze/SKILL.md exactly, from start to finish, "
           "without asking questions.")
 
-# What the unattended session may do without asking: the rolodex's own commands, web research,
-# and files in work/. Nothing else.
+# Security gate. What the unattended session may do without asking: the rolodex's own commands
+# (whose web reads are public-internet only), web search, reading its work files and the card photos,
+# and writing inside work/. No curl or other shell commands, and no reading anything else on this
+# computer, so a web page with hidden instructions can't reach your files or send them anywhere.
 ALLOWED_TOOLS = [
     "Bash(python -m rolodex.tasks:*)", "Bash(python3 -m rolodex.tasks:*)",
     "Bash(python -m rolodex.catalog:*)", "Bash(python3 -m rolodex.catalog:*)",
-    "Bash(curl:*)", "Bash(mkdir:*)", "Bash(date:*)", "Bash(file:*)",
-    "WebSearch", "WebFetch", "Read", "Edit(work/**)", "Glob", "Grep", "Agent", "Task",
+    "Bash(mkdir -p work)",
+    "WebSearch", "WebFetch", "Read(./work/**)", "Read(./data/cards/**)", "Edit(./work/**)", "Write(./work/**)",
+    "Agent", "Task",
+]
+# Refused even if a later rule or setting would allow them.
+DENIED_TOOLS = [
+    "Bash(curl:*)", "Bash(wget:*)", "Bash(powershell:*)", "Bash(pwsh:*)", "Bash(cmd:*)", "Bash(scp:*)",
+    "Bash(ssh:*)", "Bash(git:*)", "Bash(rm:*)",
+    "Read(./data/*.db)", "Read(./data/*.db-*)", "Read(./.env)", "Read(./config.yaml)",
+    "Edit(./rolodex/**)", "Edit(./.claude/**)", "Edit(./data/**)",
 ]
 
 LOG = lambda: config.CACHE_DIR / "analysis.log"
@@ -77,7 +87,7 @@ def start(trigger: str = "button") -> str:
         db.update_analysis(state="running", started_at=db.now(), finished_at=None, planned=planned, finished=[],
                            current="", summary="", trigger=trigger)
         cmd = [config.CLAUDE_COMMAND, "-p", PROMPT, "--model", config.ANALYSIS_MODEL, "--output-format", "stream-json", "--verbose",
-               "--allowedTools", *ALLOWED_TOOLS]
+               "--allowedTools", *ALLOWED_TOOLS, "--disallowedTools", *DENIED_TOOLS]
         env = {**os.environ, "ROLODEX_ANALYSIS": "1"}
         log_file = open(LOG(), "w", encoding="utf-8")
         try:

@@ -64,11 +64,12 @@ MAX_PDF_BYTES = 40 * 1024 * 1024
 
 def download_pdf(url: str, name: str) -> str:
     """Save a copy of a PDF into data/docs/; returns the file name, or "" if it isn't a reachable PDF."""
-    if not re.match(r"^https?://", url or "", re.I):
+    from .images import _opener, _public_host
+    if not re.match(r"^https?://", url or "", re.I) or not _public_host(url):   # public internet only
         return ""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (supplier rolodex)"})
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _opener.open(req, timeout=30) as r:
             data = r.read(MAX_PDF_BYTES + 1)
     except Exception:
         log.warning("couldn't download %s", url)

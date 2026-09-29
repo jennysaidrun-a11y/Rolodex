@@ -350,7 +350,9 @@ def test_claude_code_mode_cards_pamphlets_and_research(client, monkeypatch, caps
     class FakePDF(io.BytesIO):
         def __enter__(self): return self
         def __exit__(self, *a): pass
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=0: FakePDF(b"%PDF-1.7 fake"))
+    from rolodex import images
+    monkeypatch.setattr(images, "_public_host", lambda url: True)
+    monkeypatch.setattr(images._opener, "open", lambda req, timeout=0: FakePDF(b"%PDF-1.7 fake"))
     result = dict(RESEARCH, brochures=[
         {"card_id": str(pamphlet_id), "title": "Bakery Flours 2026", "pdf_url": "https://mwf.example/flours.pdf",
          "summary": "Full flour line with specs."},
