@@ -268,10 +268,13 @@ PRODUCTS_SCHEMA = {
 
 REVIEW_INSTRUCTIONS = (
     "Check this catalog against their website, product by product, the way a buyer would read each "
-    "product page. To keep the run quick, open a product's page only when it has something under "
-    "`missing` other than 'unique one-liner' (and products already reviewed with nothing missing "
-    "are skipped entirely); a missing one-liner alone is written from the name, specs and `about` "
-    "text you already have. Open each such product's page_url (curl -sL -A 'Mozilla/5.0' --max-time 20; WebFetch "
+    "product page: every product's page is read in full. Don't open the pages one at a time: for each "
+    "batch of 40 products run `python -m rolodex.catalog digest <supplier_id> --from <N> --count 40 "
+    "--out work/pages-<supplier_id>-<N>.json` (N = 0, 40, 80, ...; one subagent per batch, in parallel). "
+    "It fetches the pages several at a time and writes each page's full text (tabs and accordions "
+    "included), spec tables, every document link and its photos. Read all of it. Open a page_url "
+    "yourself only for the products it lists under `open_yourself` (little text in the page, or it "
+    "couldn't be read), or when something the page mentions loads from another URL. For those pages (curl -sL -A 'Mozilla/5.0' --max-time 20; WebFetch "
     "drops links and images) and look at everything on it: the product photo(s); the full description; "
     "every specification (dimensions and sizes, weights, capacity, material, colours, pack / case "
     "counts, temperature ranges, viscosity grades, food-grade ratings such as NSF H1, kosher, halal, "
@@ -285,7 +288,7 @@ REVIEW_INSTRUCTIONS = (
     "pictures and its gallery), give it; a product listed with no photo almost always has one. Tabs, accordions and 'downloads' "
     "sections count; if a section loads from another URL, open that too. Add only what the page "
     "actually shows, in English, with values exactly as stated; never guess. Products listed under "
-    "`missing` are the ones to check. "
+    "`missing` need it most, but check them all: something already there can still be incomplete. "
     'Write {"note": "...", "products": [{"id": "<id from the list>", "specs": [["Label", "value"]], '
     '"files": [{"name": "Safety data sheet (US)", "url": "https://..."}], "image_url": "...", '
     '"images": [...], "description": "...", "details": "...", "sku": "..."}]} with only the fields '

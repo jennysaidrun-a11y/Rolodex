@@ -125,9 +125,10 @@ each size). Run `list` again; for each supplier in `review` (a catalog saved in 
 too), give each to its own subagent when there are 2 or more:
 1. `python -m rolodex.tasks current <id>` and `python -m rolodex.tasks progress <id> 1 2 Checking every product page`.
 2. `python -m rolodex.tasks show review <id>` lists every product with what it has and what's `missing`,
-   and the instructions. Follow them: open the page of each product with something `missing` and add
-   what it shows (specs and dimensions, item numbers, photos, SDS / data sheets / spec sheets,
-   certificates), in English. A missing one-liner alone needs no page: write it from what's listed.
+   and the instructions. Follow them: read every product's page through
+   `python -m rolodex.catalog digest <id> --from N --count 40 --out work/pages-<id>-N.json` (fetches
+   40 pages at a time in parallel) and add what each page shows (specs and dimensions, item numbers,
+   photos, SDS / data sheets / spec sheets, certificates), in English.
    For a big catalog split the products into batches of about 40 for parallel subagents.
 3. Write `work/review-<id>.json` and save it: `python -m rolodex.tasks save products <id> work/review-<id>.json`.
    Saving marks the catalog reviewed, even when nothing needed adding (save `{"products": []}` with a

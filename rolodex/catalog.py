@@ -744,6 +744,77 @@ def crawl(url: str, minutes: float = 20) -> dict:
     return result
 
 
+# ---------- page digests for the catalog review ----------
+
+BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "p", "li", "dt", "dd", "td", "th", "figcaption", "summary", "label"}
+
+
+def page_digest(url: str, page: str, name: str = "") -> dict:
+    """Everything a buyer would read on a product page, compact: its text in reading order (outside
+    menus, footers and related-product blocks; tabs and accordions included, since they're in the
+    page), spec tables as rows, every document link, and the product's photos."""
+    root = pagecards.parse(page)
+    lines, seen = [], set()
+    for n in pagecards.content_nodes(root, skip_related=True):
+        if n.tag == "tr":
+            cells = [c.all_text() for c in n.children if c.tag in ("td", "th")]
+            text = " | ".join(c for c in cells if c)
+        elif n.tag in BLOCK_TAGS and n.tag not in ("td", "th") and not any(
+                c.tag in BLOCK_TAGS for c in n.walk() if c is not n):
+            text = n.all_text()
+        else:
+            continue
+        if text and text not in seen and not (n.tag.startswith("h") and len(text) > 200):
+            seen.add(text)
+            lines.append(("## " if n.tag in ("h1", "h2", "h3", "h4") else "") + text[:600])
+    found = pagecards.product_specs(url, page)
+    files, known = [], set()
+    for f in found["files"]:
+        known.add(f["url"])
+        files.append(f)
+    for n in root.walk():   # document links anywhere on the page (download tabs are often outside <main>)
+        href = n.attrs.get("href", "") if n.tag == "a" else ""
+        if href and pagecards.DOC_LINK.search(href):
+            u = urljoin(url, html.unescape(href))
+            if u.startswith(("http://", "https://")) and u not in known:
+                known.add(u)
+                files.append({"name": (n.all_text() or urlparse(u).path.rsplit("/", 1)[-1])[:120], "url": u})
+    text = "\n".join(lines)
+    return {"text": text[:8000], "specs": found["specs"], "files": files[:20],
+            "photos": page_photos(url, page, name)[:8],
+            **({"note": "Little text in the page itself (it may load by script): open it yourself."}
+               if len(text) < 300 else {})}
+
+
+def digest(supplier_id: int, start: int = 0, count: int = 40, workers: int = 6) -> list[dict]:
+    """Page digests for products start .. start+count of a supplier's catalog, fetched several at a
+    time (a few pages in parallel, politely) so Claude reads every page without opening them one by one."""
+    from concurrent.futures import ThreadPoolExecutor
+    from . import db
+    products = db.catalog_products(supplier_id, None, "", 100000)[0][start:start + count]
+    urls = [p["page_url"].split("#")[0] for p in products if p["page_url"].startswith(("http://", "https://"))]
+    site = Site(urls[0], 10) if urls else None
+
+    def one(p: dict) -> dict:
+        row = {"id": p["id"], "name": p["name"], "page_url": p["page_url"], "details": p["details"]}
+        url = p["page_url"].split("#")[0]
+        if not url.startswith(("http://", "https://")):
+            return {**row, "error": "no product page"}
+        if site and not site.robots.can_fetch(UA, url):
+            return {**row, "error": "the site's robots.txt asks not to read this page"}
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,*/*"})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                page = r.read(3_000_000).decode("utf-8", "replace")
+            time.sleep(DELAY)
+            return {**row, **page_digest(url, page, p["name"])}
+        except Exception as e:
+            return {**row, "error": f"couldn't open the page ({type(e).__name__})"}
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(one, products))
+
+
 def main(argv: list[str]) -> None:
     minutes = 20.0
     if "--minutes" in argv:
@@ -762,6 +833,20 @@ def main(argv: list[str]) -> None:
             open(out, "w", encoding="utf-8").write(text)
             print(json.dumps({"platform": result["platform"], "products": len(result["products"]),
                               "sections": len(result["sections"]), "file": out}))
+        else:
+            print(text)
+        return
+    if len(argv) >= 2 and argv[0] == "digest" and argv[1].isdigit():
+        from . import db
+        db.init()
+        start = int(argv[argv.index("--from") + 1]) if "--from" in argv else 0
+        count = int(argv[argv.index("--count") + 1]) if "--count" in argv else 40
+        rows = digest(int(argv[1]), start, count)
+        text = json.dumps({"supplier_id": int(argv[1]), "from": start, "products": rows}, indent=1, ensure_ascii=False)
+        if out:
+            open(out, "w", encoding="utf-8").write(text)
+            print(json.dumps({"products": len(rows), "file": out,
+                              "open_yourself": [r["id"] for r in rows if r.get("note") or r.get("error")]}))
         else:
             print(text)
         return
