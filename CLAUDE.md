@@ -25,6 +25,10 @@ app when code (anything outside `data/`) changes, so pushing to `main` is how a 
   `research_prompt`, `card_schema`, `research_schema`), shared by both modes; saving goes through
   `recheck.save_reading` / `save_research`. If you add a profile field, add it to the research
   schema, `supplier.html` and `claude.directory`.
+- **Duplicate gates**: a photo whose file was already added (card photos are named by a hash of the
+  uploaded file) is skipped on upload; a repeat card for a supplier researched within `FRESH_DAYS`
+  is filed without another research run. Analysis runs on `config.ANALYSIS_MODEL` (Sonnet), and the
+  catalog review opens only product pages with something missing.
 - **Repeat cards** never create duplicates: `tasks save card` merges a card whose company matches an
   existing supplier (`db.possible_duplicates`: name without Inc/LLC, website or company-email domain,
   phone) into it and queues that supplier for a "what's new since last_checked" check.

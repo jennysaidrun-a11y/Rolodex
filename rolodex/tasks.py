@@ -130,6 +130,7 @@ def cmd_show(kind: str, item_id: int) -> None:
                                        ("unique one-liner", p["id"] not in unclear)) if not ok]
             rows.append({"id": p["id"], "name": p["name"], "page_url": p["page_url"], "sku": p["sku"],
                          "details": p["details"],
+                         **({"about": p["description"][:400]} if "unique one-liner" in missing else {}),
                          "has": {"photo": bool(p["image_url"]), "more_photos": len(p["images"]),
                                  "specs": [f"{a}: {b}" for a, b in p["specs"]][:12],
                                  "files": [f["name"] for f in p["files"]], "description_chars": len(p["description"])},
@@ -173,6 +174,16 @@ def cmd_save(kind: str, item_id: int, source: str) -> None:
                 db.merge_supplier(c["supplier_id"], same[0]["id"])
             merged_into = same[0]["id"]
         supplier_id = recheck.save_reading(item_id, data)
+        # Duplicate gate: a repeat card for a supplier researched in the last FRESH_DAYS days is just
+        # filed with it; researching it again would find nothing new and waste the run.
+        s = db.get_supplier(supplier_id)
+        if merged_into and s["status"] == "active" and (s["last_checked"] or "") >= (
+                date.today() - timedelta(days=config.FRESH_DAYS)).isoformat():
+            db.update_supplier(supplier_id, progress="")
+            db.analysis_finished(supplier_id)
+            _out({"saved": True, "supplier_id": supplier_id, "merged_into_existing": s["company"],
+                  "next_step": f"Already researched on {s['last_checked'][:10]}: nothing more to do for this card."})
+            return
         # Research it (or refresh it with what the card or pamphlet added) on this same run.
         db.update_supplier(supplier_id, status="queued", next_check=date.today().isoformat())
         a = db.analysis()
@@ -257,7 +268,10 @@ PRODUCTS_SCHEMA = {
 
 REVIEW_INSTRUCTIONS = (
     "Check this catalog against their website, product by product, the way a buyer would read each "
-    "product page. Open every product's page_url (curl -sL -A 'Mozilla/5.0' --max-time 20; WebFetch "
+    "product page. To keep the run quick, open a product's page only when it has something under "
+    "`missing` other than 'unique one-liner' (and products already reviewed with nothing missing "
+    "are skipped entirely); a missing one-liner alone is written from the name, specs and `about` "
+    "text you already have. Open each such product's page_url (curl -sL -A 'Mozilla/5.0' --max-time 20; WebFetch "
     "drops links and images) and look at everything on it: the product photo(s); the full description; "
     "every specification (dimensions and sizes, weights, capacity, material, colours, pack / case "
     "counts, temperature ranges, viscosity grades, food-grade ratings such as NSF H1, kosher, halal, "
@@ -271,7 +285,7 @@ REVIEW_INSTRUCTIONS = (
     "pictures and its gallery), give it; a product listed with no photo almost always has one. Tabs, accordions and 'downloads' "
     "sections count; if a section loads from another URL, open that too. Add only what the page "
     "actually shows, in English, with values exactly as stated; never guess. Products listed under "
-    "`missing` need it most, but check them all: something already there can still be incomplete. "
+    "`missing` are the ones to check. "
     'Write {"note": "...", "products": [{"id": "<id from the list>", "specs": [["Label", "value"]], '
     '"files": [{"name": "Safety data sheet (US)", "url": "https://..."}], "image_url": "...", '
     '"images": [...], "description": "...", "details": "...", "sku": "..."}]} with only the fields '

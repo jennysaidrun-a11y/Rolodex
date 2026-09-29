@@ -49,6 +49,11 @@ USE_API = ANALYSIS == "api"
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5")
 # Ask Claude and "Search every catalog" answers: Sonnet is quick and plenty for finding things.
 SEARCH_MODEL = os.environ.get("SEARCH_MODEL", "claude-sonnet-5")
+# The "analyze now" run (reading, research, catalog review): Sonnet is several times faster than Opus
+# and does this work well. Set ANALYSIS_MODEL=opus for the most careful (and slowest) runs.
+ANALYSIS_MODEL = os.environ.get("ANALYSIS_MODEL", "sonnet")
+# A repeat card for a supplier checked this recently doesn't start another research run.
+FRESH_DAYS = int(os.environ.get("FRESH_DAYS", "30"))
 RECHECK_DAYS = int(os.environ.get("RECHECK_DAYS", "90"))
 # The app rechecks due suppliers on its own in the background; set to 0 to turn off
 # (e.g. when a scheduled task runs `python -m rolodex.recheck` instead).

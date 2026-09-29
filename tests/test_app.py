@@ -58,9 +58,14 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
+_photos = iter(range(1, 10000))
+
+
 def photo() -> bytes:
+    """A different picture each time (the same photo twice is skipped as a duplicate)."""
+    n = next(_photos)
     buf = io.BytesIO()
-    Image.new("RGB", (3000, 1800), "white").save(buf, "JPEG")
+    Image.new("RGB", (3000, 1800), (n * 37 % 256, n * 91 % 256, n * 53 % 256)).save(buf, "JPEG")
     return buf.getvalue()
 
 

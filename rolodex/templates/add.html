@@ -2,9 +2,9 @@
 {% from "_macros.html" import back %}
 {% block main %}
 {{ back("/supplier/" ~ supplier.id if supplier else "/", supplier.company if supplier else "Suppliers") }}
-{% if added %}
+{% if added or skipped %}
 <section class="card narrow added">
-  <p><strong>✓ {{ added }} added.</strong> Snap the next one below, or when you're done:</p>
+  <p><strong>✓ {{ added }} added.</strong>{% if skipped %} {{ skipped }} skipped: already in the rolodex.{% endif %} Snap the next one below, or when you're done:</p>
   {% if not use_api and not can_run %}
   <form method="post" action="/analysis/start"><input type="hidden" name="return_to" value="/">
     <button class="btn">Done adding: analyze now</button></form>
@@ -78,7 +78,7 @@
     many.disabled = true;
     const kind = form.querySelector("input[name=kind]:checked").value;
     const supplier = form.querySelector("input[name=supplier]");
-    let saved = 0, failed = 0;
+    let saved = 0, failed = 0, skipped = 0;
     for (let i = 0; i < files.length; i += 3) {
       label.textContent = `Saving ${Math.min(i + 3, files.length)} of ${files.length}… `;
       const data = new FormData();
@@ -89,10 +89,12 @@
       try {
         const r = await fetch("/add", {method: "POST", body: data});
         if (!r.ok) throw new Error(r.status);
-        saved += batch.length;
+        const back = new URL(r.url).searchParams;
+        saved += +(back.get("added") || 0); skipped += +(back.get("skipped") || 0);
       } catch (e) { failed += batch.length; }
     }
     const q = new URLSearchParams({added: {{ added }} + saved});
+    if (skipped) q.set("skipped", skipped);
     if (supplier) q.set("supplier", supplier.value);
     if (failed) q.set("msg", `${failed} photo${failed > 1 ? "s" : ""} didn't save. Please add ${failed > 1 ? "them" : "it"} again.`);
     location.href = "/add?" + q;
