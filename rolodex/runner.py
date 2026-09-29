@@ -211,9 +211,26 @@ def progress() -> dict:
     total = max(len(planned), 1)
     pct = round(100 * (len(finished) + step) / total) if a["state"] == "running" else 100
     return {"state": a["state"], "done": len(finished), "total": len(planned), "percent": min(pct, 99 if a["state"] == "running" else 100),
+            "eta": _eta(started, pct) if a["state"] == "running" else "",
             "current": a["current"], "summary": a["summary"], "started_at": started, "finished_at": a.get("finished_at"),
             "steps": [{"company": s["company"], "label": s["progress"].get("label", ""), "step": s["progress"].get("step"),
                        "of": s["progress"].get("of")} for s in planned if s["progress"]]}
+
+
+def _eta(started: str, percent: int) -> str:
+    """Time left at the pace so far ("about 12 min left"), once there's enough to go on."""
+    try:
+        elapsed = (datetime.now() - datetime.fromisoformat(started)).total_seconds()
+    except ValueError:
+        return ""
+    if percent < 5 or elapsed < 60:
+        return "working out time left"
+    minutes = round(elapsed * (100 - percent) / percent / 60)
+    if minutes < 1:
+        return "almost done"
+    if minutes < 90:
+        return f"about {minutes} min left"
+    return f"about {minutes / 60:.1f} hours left".replace(".0 ", " ")
 
 
 def start_rechecks(interval_seconds: int = 1800) -> None:

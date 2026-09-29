@@ -58,13 +58,44 @@
   };
   form.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", show));
   const many = form.querySelector("input[name=many]");
-  if (many) many.addEventListener("change", () => {
-    // photos picked from the library are saved right away, one company each
-    if (!many.files.length) return;
-    const h = document.createElement("input"); h.type = "hidden"; h.name = "then"; h.value = "another"; form.append(h);
-    form.querySelectorAll("button").forEach(x => x.disabled = true);
-    many.closest("label").firstChild.textContent = `Saving ${many.files.length} photo${many.files.length > 1 ? "s" : ""}… `;
-    form.submit();
+  // Shrink a photo on the phone (a full-size iPhone photo is several MB) before sending it.
+  const shrink = async (file) => {
+    try {
+      const img = await createImageBitmap(file, {imageOrientation: "from-image"});
+      const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+      return blob ? new File([blob], (file.name || "photo").replace(/\.\w+$/, "") + ".jpg", {type: "image/jpeg"}) : file;
+    } catch (e) { return file; }   // can't read it here: send it as is
+  };
+  if (many) many.addEventListener("change", async () => {
+    // photos are saved right away, one company each, a few at a time so a big batch never fails
+    const files = [...many.files];
+    if (!files.length) return;
+    const label = many.closest("label").firstChild;
+    many.disabled = true;
+    const kind = form.querySelector("input[name=kind]:checked").value;
+    const supplier = form.querySelector("input[name=supplier]");
+    let saved = 0, failed = 0;
+    for (let i = 0; i < files.length; i += 3) {
+      label.textContent = `Saving ${Math.min(i + 3, files.length)} of ${files.length}… `;
+      const data = new FormData();
+      data.append("kind", kind); data.append("then", "another"); data.append("added", "0");
+      if (supplier) data.append("supplier", supplier.value);
+      const batch = await Promise.all(files.slice(i, i + 3).map(shrink));
+      batch.forEach(f => data.append("many", f));
+      try {
+        const r = await fetch("/add", {method: "POST", body: data});
+        if (!r.ok) throw new Error(r.status);
+        saved += batch.length;
+      } catch (e) { failed += batch.length; }
+    }
+    const q = new URLSearchParams({added: {{ added }} + saved});
+    if (supplier) q.set("supplier", supplier.value);
+    if (failed) q.set("msg", `${failed} photo${failed > 1 ? "s" : ""} didn't save. Please add ${failed > 1 ? "them" : "it"} again.`);
+    location.href = "/add?" + q;
   });
   form.addEventListener("submit", (e) => {
     const front = form.querySelector("input[name=front]");

@@ -175,7 +175,9 @@ run("finish", "Researched 1 supplier.")
     assert wait_for(lambda: (db.get_supplier(sid)["progress"] or {}).get("label") == "Pricing")
     p = client.get("/analysis").json()
     assert p["state"] == "running" and p["total"] == 1 and p["percent"] == 17 and p["steps"][0]["label"] == "Pricing"
+    assert p["eta"] == "working out time left"
     assert 'id="runbar" data-state="running"' in client.get("/").text
+    assert runner._eta("2000-01-01T00:00:00", 50).endswith("hours left") and runner._eta(db.now(), 50) == "working out time left"
     (tmp_path / "go").touch()
     assert wait_for(lambda: client.get("/analysis").json()["state"] == "done")
     p = client.get("/analysis").json()
