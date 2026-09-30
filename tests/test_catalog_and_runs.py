@@ -544,8 +544,13 @@ def test_page_digests_read_every_product_page(client, monkeypatch):
     monkeypatch.setattr(catalog, "_open", fake_open)
     monkeypatch.setattr(catalog, "_public", lambda url: True)
     monkeypatch.setattr(catalog, "DELAY", 0)
+    db.update_supplier(sid, progress={"step": 1, "of": 2, "label": "Checking every product page"})
     rows = catalog.digest(sid, 0, 40)
     assert len(rows) == 40 and all("error" not in r for r in rows)
+    # the progress bar moves with each batch, so a long review doesn't look stuck
+    total = len(db.catalog_products(sid, None, "", 100000)[0])
+    p = db.get_supplier(sid)["progress"]
+    assert p["label"] == f"Checking every product page ({min(40, total):,} of {total:,})" and p["part"] > 0
     r = next(r for r in rows if r["id"] == "BB-7")
     assert "Clear bread bag" in r["text"] and "Width | 7 in" in r["text"] and "Menu" not in r["text"]
     assert r["files"][0]["url"] == "https://bags.example/files/SDS_bag_7_US_EN.pdf"
