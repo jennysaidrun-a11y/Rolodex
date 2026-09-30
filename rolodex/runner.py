@@ -20,6 +20,9 @@ from . import config, db
 log = logging.getLogger("rolodex.runner")
 _lock = threading.Lock()
 _proc: subprocess.Popen | None = None
+# Windows consoles default to cp1252, which can't print most supplier text: make every Python
+# that Claude Code starts (python -m rolodex.tasks / catalog) read and write UTF-8.
+UTF8_ENV = {"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
 
 PROMPT = ("Run the rolodex analysis: follow .claude/skills/analyze/SKILL.md exactly, from start to finish, "
           "without asking questions.")
@@ -88,7 +91,7 @@ def start(trigger: str = "button") -> str:
                            current="", summary="", trigger=trigger)
         cmd = [config.CLAUDE_COMMAND, "-p", PROMPT, "--model", config.ANALYSIS_MODEL, "--output-format", "stream-json", "--verbose",
                "--allowedTools", *ALLOWED_TOOLS, "--disallowedTools", *DENIED_TOOLS]
-        env = {**os.environ, "ROLODEX_ANALYSIS": "1"}
+        env = {**os.environ, "ROLODEX_ANALYSIS": "1", **UTF8_ENV}
         log_file = open(LOG(), "w", encoding="utf-8")
         try:
             _proc = subprocess.Popen(cmd, cwd=config.ROOT, stdout=log_file, stderr=subprocess.STDOUT,
@@ -303,7 +306,8 @@ def _ask(prompt: str, stdin: str, timeout: int) -> dict:
     try:
         r = subprocess.run([config.CLAUDE_COMMAND, "-p", prompt, "--output-format", "json",
                             "--model", config.SEARCH_MODEL], input=stdin,
-                           capture_output=True, text=True, timeout=timeout, cwd=config.ROOT)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, cwd=config.ROOT,
+                           env={**os.environ, **UTF8_ENV})
     except subprocess.TimeoutExpired:
         raise RuntimeError("Claude took too long to answer. Try a shorter question.")
     out = r.stdout.strip()
