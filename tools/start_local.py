@@ -59,7 +59,7 @@ def analysis_running() -> bool:
 def start_app() -> subprocess.Popen:
     print(f"\nRunning version {git('log', '--oneline', '-1').stdout.strip()}")
     print(f"Open http://localhost:{PORT} in your browser. Leave this window open (minimized is fine).\n", flush=True)
-    env = {**os.environ, "ROLODEX_GIT_SYNC": os.environ.get("ROLODEX_GIT_SYNC", "1")}
+    env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "ROLODEX_GIT_SYNC": os.environ.get("ROLODEX_GIT_SYNC", "1")}
     return subprocess.Popen([sys.executable, "-m", "uvicorn", "rolodex.app:app", "--host", HOST, "--port", PORT],
                             cwd=ROOT, env=env)
 

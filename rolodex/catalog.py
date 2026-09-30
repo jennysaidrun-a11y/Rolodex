@@ -861,6 +861,8 @@ def fetch_page(url: str, out: str = "") -> dict:
 
 
 def main(argv: list[str]) -> None:
+    from .tasks import utf8_console
+    utf8_console()
     minutes = 20.0
     if "--minutes" in argv:
         i = argv.index("--minutes")
