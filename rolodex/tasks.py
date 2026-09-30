@@ -321,7 +321,15 @@ def cmd_directory() -> None:
     print(claude.directory(suppliers, notes))
 
 
+def utf8_console() -> None:
+    """Windows consoles default to cp1252, which can't print most supplier text."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str]) -> None:
+    utf8_console()
     db.init()
     match argv:
         case ["list"]:
