@@ -95,6 +95,21 @@ def desktop_shortcut() -> None:
     subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, timeout=60)
 
 
+def open_window() -> None:
+    """Open the Rolodex in its own app window (Edge or Chrome "app mode": no tabs or address bar,
+    its own taskbar icon), falling back to a normal browser tab."""
+    url = f"http://localhost:{PORT}/"
+    if os.name == "nt":
+        for base in (os.environ.get("ProgramFiles(x86)", ""), os.environ.get("ProgramFiles", ""),
+                     os.environ.get("LOCALAPPDATA", "")):
+            for exe in (r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe"):
+                path = Path(base) / exe
+                if base and path.exists():
+                    subprocess.Popen([str(path), f"--app={url}", "--window-size=1280,900"])
+                    return
+    webbrowser.open(url)
+
+
 def open_browser_once() -> None:
     """Open the app in the browser when started from the icon, not again after each update restart
     (run.bat's window, our parent, stays the same across those)."""
@@ -109,7 +124,7 @@ def open_browser_once() -> None:
         if app_up():
             break
         time.sleep(1)
-    webbrowser.open(f"http://localhost:{PORT}/")
+    open_window()
     try:
         mark.parent.mkdir(parents=True, exist_ok=True)
         mark.write_text(parent)
@@ -131,8 +146,8 @@ def main() -> int:
     except Exception as e:
         print(f"Couldn't add the desktop icon: {e}", flush=True)
     if app_up():   # already running (the icon was clicked again): just show it
-        print("The Rolodex is already running; opening it in your browser.", flush=True)
-        webbrowser.open(f"http://localhost:{PORT}/")
+        print("The Rolodex is already running; opening it.", flush=True)
+        open_window()
         return 0
     running = code_version()
     app = start_app()
