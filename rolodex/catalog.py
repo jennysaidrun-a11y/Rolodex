@@ -805,7 +805,8 @@ def digest(supplier_id: int, start: int = 0, count: int = 40, workers: int = 6) 
     time (a few pages in parallel, politely) so Claude reads every page without opening them one by one."""
     from concurrent.futures import ThreadPoolExecutor
     from . import db
-    products = db.catalog_products(supplier_id, None, "", 100000)[0][start:start + count]
+    everything = db.catalog_products(supplier_id, None, "", 100000)[0]
+    products = everything[start:start + count]
     urls = [p["page_url"].split("#")[0] for p in products if p["page_url"].startswith(("http://", "https://"))]
     site = Site(urls[0], 10) if urls else None
 
@@ -828,7 +829,22 @@ def digest(supplier_id: int, start: int = 0, count: int = 40, workers: int = 6) 
             return {**row, "error": f"couldn't open the page ({type(e).__name__})"}
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(one, products))
+        rows = list(pool.map(one, products))
+    _count_checked(supplier_id, min(start + count, len(everything)), len(everything))
+    return rows
+
+
+def _count_checked(supplier_id: int, done: int, total: int) -> None:
+    """Show "Checking every product page (400 of 1,700)" on the progress bar during a review, so a
+    long review of a big catalog visibly moves instead of looking stuck."""
+    from . import db
+    s = db.get_supplier(supplier_id)
+    p = (s or {}).get("progress") or {}
+    if not s or not p or not total:
+        return
+    label = p.get("label", "Checking every product page").split(" (")[0]
+    db.update_supplier(supplier_id, progress={**p, "label": f"{label} ({done:,} of {total:,})",
+                                              "part": round(done / total, 3)})
 
 
 # ---------- the only way the analysis reads a web page itself ----------

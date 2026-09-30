@@ -257,7 +257,9 @@ def progress() -> dict:
         if s["progress"] and s not in finished:
             # "step 3 of 6" means step 3 is under way: steps 1 and 2 are done
             of = max(s["progress"].get("of", 7), 1)
-            step += max(min(s["progress"].get("step", 0), of) - 1, 0) / of
+            # "part" is how far into that step it is (products checked in a catalog review)
+            part = min(max(float(s["progress"].get("part") or 0), 0.0), 1.0)
+            step += (max(min(s["progress"].get("step", 0), of) - 1, 0) + part) / of
     total = max(len(planned), 1)
     pct = round(100 * (len(finished) + step) / total) if a["state"] == "running" else 100
     return {"state": a["state"], "done": len(finished), "total": len(planned), "percent": min(pct, 99 if a["state"] == "running" else 100),
