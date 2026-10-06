@@ -21,7 +21,10 @@ On a Windows PC, `run.bat` does the same through `tools/start_local.py` (localho
   another run by itself (`runner._continue_if_unfinished`, up to `MAX_CONTINUES` in a row). A session that
   lingers after every planned supplier is finished (and nothing else waits) is closed after
   `IDLE_DONE_SECONDS` (`runner._close_when_done`). A session whose log stays silent for `STALL_SECONDS` (30 min) is hung: it is stopped and a
-  new run carries on (`tools/start_local.py` also stops one so a waiting update isn't blocked forever). **Ask Claude** also goes through `runner.ask` (directory JSON on stdin), and **Ask Claude**
+  new run carries on (`tools/start_local.py` also stops one so a waiting update isn't blocked forever). A run the database still calls "running"
+  when the app starts died with it: `runner.resume_interrupted` marks it stopped and carries on with the rest.
+  Never hold a database transaction open across web fetches (two catalog copies run side by side and the
+  other's save fails with "database is locked"): collect updates, then write them in one short transaction. **Ask Claude** also goes through `runner.ask` (directory JSON on stdin), and **Ask Claude**
   on the Products page (`/products/ask`) through `runner.ask_products` (every catalog product,
   compact, on stdin; answers with product keys). Both use `config.SEARCH_MODEL` (Sonnet). `api`
   mode calls the Claude API from `rolodex/claude.py` instead.

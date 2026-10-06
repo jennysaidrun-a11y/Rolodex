@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI):
     if config.USE_API and config.AUTO_RECHECK:
         recheck.start_background()
     if not config.USE_API and config.AUTO_RECHECK and not runner.available():
+        runner.resume_interrupted()
         runner.start_rechecks()
     if config.GIT_SYNC:
         gitsync.start_background()

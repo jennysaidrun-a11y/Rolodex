@@ -308,6 +308,28 @@ def _eta(started: str, percent: int) -> str:
     return f"about {minutes / 60:.1f} hours left".replace(".0 ", " ")
 
 
+def resume_interrupted(delay_seconds: float = 20) -> None:
+    """At app start: a run the database still calls "running" died with the app (closed window, restart,
+    power cut). Mark it stopped and, shortly after, carry on with whatever it hadn't finished. Suppliers
+    it already finished were saved one by one and aren't redone."""
+    a = db.analysis()
+    if a["state"] != "running" or running():
+        return
+    db.update_analysis(state="failed", finished_at=db.now(), current="",
+                       summary="Stopped when the app closed; picking up the rest.")
+    _reset_leftovers()
+
+    def later():
+        import time
+        time.sleep(delay_seconds)
+        try:
+            if not running() and any(waiting()):
+                start("resume")
+        except Exception:
+            log.exception("resume after restart")
+    threading.Thread(target=later, name="resume", daemon=True).start()
+
+
 def start_rechecks(interval_seconds: int = 1800) -> None:
     """While the app is running, start a run when something is due (at most one try every 6 hours)."""
     def loop():
