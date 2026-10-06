@@ -397,6 +397,17 @@ def ask(question: str, directory_json: str, timeout: int = 240) -> dict:
     return result
 
 
+def pick_sections(question: str, section_map: str, timeout: int = 120) -> list[str]:
+    """First half of a product question on big catalogs: which catalog sections are worth reading."""
+    prompt = ("You help a commercial bakery's staff find products in their suppliers' catalogs. Standard input lists "
+              "every catalog section, one per line: code | supplier | section | number of products | a few product names. "
+              "Pick the sections (up to 40, best first) that could hold what the request below needs. Understand "
+              "the need, not just the words (\"something to wrap pallets\" is stretch film). Don't use any tools.\n\n"
+              'Reply with only a JSON object: {"answer": "", "matches": [{"key": "<section code>"}]}\n\nRequest: ' + question)
+    result = _ask(prompt, section_map, timeout)
+    return [str(x["key"]) for x in result["matches"] if isinstance(x.get("key"), str)][:40]
+
+
 def ask_products(question: str, products_json: str, timeout: int = 240) -> dict:
     """Find catalog products for a plain-English request with Claude Code.
     Returns {answer, matches: [{key, why}]}; raises RuntimeError with a readable reason."""

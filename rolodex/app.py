@@ -545,11 +545,14 @@ async def product_ask(request: Request, question: str = Form(...), history: str 
         error = "There are no catalogs yet. Analyze a supplier first."
     elif config.USE_API:
         try:
-            result = await run_in_threadpool(claude.ask_products, request_text, products)
+            result = await run_in_threadpool(claude.ask_products, request_text, claude.shortlist(request_text, products))
         except claude.ClaudeError as e:
             error = str(e)
     elif not runner.available():
         try:
+            if len(claude.product_list(products)) > claude.PRODUCT_BUDGET:   # too many for one question
+                sections = await run_in_threadpool(runner.pick_sections, request_text, claude.section_map(products))
+                products = claude.shortlist(request_text, products, sections)
             result = await run_in_threadpool(runner.ask_products, request_text, claude.product_list(products))
         except RuntimeError as e:
             error = str(e)
