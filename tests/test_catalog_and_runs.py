@@ -604,3 +604,35 @@ time.sleep(60)
     assert wait_for(lambda: not runner.running(), 20)
     p = client.get("/analysis").json()
     assert p["state"] == "done" and p["done"] == 1
+
+
+def test_a_run_that_goes_silent_is_restarted(client, tmp_path, monkeypatch):
+    first, second = new_supplier(), new_supplier()
+    for sid in (first, second):
+        db.update_supplier(sid, status="queued", next_check="2026-01-01")
+    monkeypatch.setattr(runner, "IDLE_CHECK_SECONDS", 0.2)
+    monkeypatch.setattr(runner, "STALL_SECONDS", 3)
+    monkeypatch.setenv("ROLODEX_DATA_DIR", str(config.DATA_DIR))
+    # a stand-in for Claude Code that finishes one supplier and then hangs; the next run finishes the other
+    script = f"""
+import json, os, subprocess, sys, time
+def run(*a):
+    subprocess.run([sys.executable, "-m", "rolodex.tasks", *a], check=True, capture_output=True)
+    print(json.dumps({{"type": "system"}}), flush=True)   # Claude Code logs every step
+sid = {second} if os.path.exists("ran-once") else {first}
+hang = not os.path.exists("ran-once")
+open("ran-once", "w").write("1")
+run("begin"); run("current", str(sid))
+open("research.json", "w").write({json.dumps(json.dumps(RESEARCH))})
+run("save", "research", str(sid), "research.json")
+subprocess.run([sys.executable, "-c", f"from rolodex import db; db.init(); db.analysis_finished({{sid}})"], check=True)
+if hang:
+    time.sleep(60)
+"""
+    monkeypatch.setattr(config, "CLAUDE_COMMAND", fake_claude(tmp_path, script))
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    (tmp_path / "rolodex").symlink_to(os.path.join(os.path.dirname(__file__), "..", "rolodex"))
+    client.post("/analysis/start", data={"return_to": "/"})
+    assert wait_for(lambda: db.get_supplier(second)["status"] == "active" and not runner.running(), 30)
+    assert db.get_supplier(first)["status"] == "active"
+    assert db.analysis()["trigger"] == "continue"

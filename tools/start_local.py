@@ -10,6 +10,7 @@ GitHub by itself every few minutes (rolodex/gitsync.py).
 from __future__ import annotations
 
 import os
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -46,14 +47,49 @@ def code_version() -> str:
     return git("log", "-1", "--format=%H", "--", ".", ":(exclude)data").stdout.strip()
 
 
-def analysis_running() -> bool:
-    db = Path(os.environ.get("ROLODEX_DATA_DIR", ROOT / "data")) / "rolodex.db"
+STALL_SECONDS = 1800   # same as rolodex.runner.STALL_SECONDS
+
+
+def _is_claude(pid: int) -> bool:
+    """Only stop the analysis' own process, never whatever reused its number after a restart."""
     try:
-        with sqlite3.connect(db, timeout=5) as conn:
-            row = conn.execute("SELECT state FROM analysis WHERE id = 1").fetchone()
-        return bool(row) and row[0] == "running"
+        if os.name == "nt":
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                                 capture_output=True, text=True, timeout=30).stdout.lower()
+        else:
+            out = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace").lower()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "claude" in out or "node" in out
+
+
+def analysis_running() -> bool:
+    """An analysis is under way (don't restart the app under it). One whose log has been quiet for
+    half an hour is hung: stop it so the update can go ahead and the next run picks up the rest."""
+    data = Path(os.environ.get("ROLODEX_DATA_DIR", ROOT / "data"))
+    try:
+        with sqlite3.connect(data / "rolodex.db", timeout=5) as conn:
+            row = conn.execute("SELECT state, pid FROM analysis WHERE id = 1").fetchone()
     except sqlite3.Error:
         return False
+    if not row or row[0] != "running":
+        return False
+    try:
+        quiet = time.time() - (data / "cache" / "analysis.log").stat().st_mtime
+    except OSError:
+        return True
+    if quiet < STALL_SECONDS:
+        return True
+    if row[1] and _is_claude(int(row[1])):
+        print(f"The analysis has been silent for {int(quiet // 60)} minutes; stopping it.", flush=True)
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(row[1])], capture_output=True, timeout=30)
+            else:
+                os.killpg(int(row[1]), signal.SIGTERM)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return False
 
 
 def start_app() -> subprocess.Popen:

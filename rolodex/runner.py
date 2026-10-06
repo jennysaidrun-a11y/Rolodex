@@ -109,7 +109,12 @@ def _watch(proc: subprocess.Popen, log_file) -> None:
     code = proc.wait()
     log_file.close()
     a = db.analysis()
-    if a["state"] == "running":   # it didn't record the finish itself
+    if proc.pid in _stalled:   # stopped for going silent: pick up where it left off
+        _stalled.discard(proc.pid)
+        db.update_analysis(state="done", finished_at=db.now(), current="",
+                           summary=f"Claude Code stopped responding for {STALL_SECONDS // 60} minutes, so it was restarted.")
+        code = 0
+    elif a["state"] == "running":   # it didn't record the finish itself
         tail = _log_tail()
         if code == 0:
             db.update_analysis(state="done", finished_at=db.now(), current="", summary=a["summary"] or _summary(a))
@@ -150,12 +155,25 @@ def _continue_if_unfinished(code: int, a: dict) -> None:
 
 IDLE_CHECK_SECONDS = 30
 IDLE_DONE_SECONDS = 300
+# Claude Code writes to its log after every step, and no single step (a Bash command) may run longer
+# than 10 minutes, so a log that has been quiet this long means the session is hung.
+STALL_SECONDS = 1800
+_stalled: set[int] = set()
+
+
+def _quiet_for() -> float:
+    import time
+    try:
+        return time.time() - LOG().stat().st_mtime
+    except OSError:
+        return 0
 
 
 def _close_when_done(proc: subprocess.Popen) -> None:
     """Claude Code sometimes lingers after the last supplier is saved (waiting on a helper, or
     re-checking). Once every planned supplier is finished and nothing else is waiting for a few
-    minutes, end the session and mark the run done, so the bar never sits at "13 of 13"."""
+    minutes, end the session and mark the run done, so the bar never sits at "13 of 13". A session
+    that goes silent (STALL_SECONDS) is stopped and a new run carries on with what's left."""
     import time
     idle_since = None
     while proc.poll() is None:
@@ -166,6 +184,11 @@ def _close_when_done(proc: subprocess.Popen) -> None:
         except Exception:
             log.exception("idle check")
             continue
+        if a["state"] == "running" and _quiet_for() >= STALL_SECONDS and proc.poll() is None:
+            log.warning("Claude Code has been silent for %ss; restarting it", STALL_SECONDS)
+            _stalled.add(proc.pid)
+            _stop(proc)
+            return
         if not done:
             idle_since = None
             continue
