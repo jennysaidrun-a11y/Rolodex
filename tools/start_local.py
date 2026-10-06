@@ -74,21 +74,22 @@ def analysis_running() -> bool:
         return False
     if not row or row[0] != "running":
         return False
+    if not (row[1] and _is_claude(int(row[1]))):
+        return False   # the run died with the app; the app clears it when it starts
     try:
         quiet = time.time() - (data / "cache" / "analysis.log").stat().st_mtime
     except OSError:
         return True
     if quiet < STALL_SECONDS:
         return True
-    if row[1] and _is_claude(int(row[1])):
-        print(f"The analysis has been silent for {int(quiet // 60)} minutes; stopping it.", flush=True)
-        try:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(row[1])], capture_output=True, timeout=30)
-            else:
-                os.killpg(int(row[1]), signal.SIGTERM)
-        except (OSError, subprocess.SubprocessError):
-            pass
+    print(f"The analysis has been silent for {int(quiet // 60)} minutes; stopping it.", flush=True)
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(row[1])], capture_output=True, timeout=30)
+        else:
+            os.killpg(int(row[1]), signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError):
+        pass
     return False
 
 

@@ -591,17 +591,19 @@ def check_photos(supplier_id: int, minutes: float = 15) -> dict:
 
     deadline = time.time() + minutes * 60 * 0.5
     replaced = dropped = 0
-    with db.connect() as conn:
-        for p in products:
-            photos = [u for u in [p["image_url"]] + list(p["images"]) if u]
-            if not photos or time.time() > deadline:
-                continue
-            good = [u for u in photos if ok(u)]
-            if good != photos:
-                replaced += bool(good)
-                dropped += not good
-                conn.execute("UPDATE catalog_products SET image_url = ?, images = ? WHERE supplier_id = ? AND id = ?",
-                             (good[0] if good else "", json.dumps(good[1:12]), supplier_id, p["id"]))
+    updates = []   # written together at the end: never hold the database while loading photos
+    for p in products:
+        photos = [u for u in [p["image_url"]] + list(p["images"]) if u]
+        if not photos or time.time() > deadline:
+            continue
+        good = [u for u in photos if ok(u)]
+        if good != photos:
+            replaced += bool(good)
+            dropped += not good
+            updates.append((good[0] if good else "", json.dumps(good[1:12]), supplier_id, p["id"]))
+    if updates:
+        with db.connect() as conn:
+            conn.executemany("UPDATE catalog_products SET image_url = ?, images = ? WHERE supplier_id = ? AND id = ?", updates)
     res = fill_photos(supplier_id, minutes * 0.5)
     s = db.get_supplier(supplier_id)
     db.update_supplier(supplier_id, catalog={**s["catalog"], "photos_checked": PHOTO_CHECK_VERSION})
@@ -624,28 +626,30 @@ def fill_specs(supplier_id: int, minutes: float = 10) -> dict:
         return {"checked": 0, "with_specs": 0}
     site = Site(next(iter(own)), minutes)
     checked = improved = 0
-    with db.connect() as conn:
-        for url, p in own.items():
-            if site.out_of_time():
-                break
-            try:
-                page = site.get(url, limit=3_000_000).decode("utf-8", "replace")
-            except Exception:
-                continue
-            checked += 1
-            found = pagecards.product_specs(url, page)
-            have = {(a.lower(), b.lower()) for a, b in p["specs"]}
-            specs = p["specs"] + [x for x in found["specs"] if (x[0].lower(), x[1].lower()) not in have]
-            known = {f["url"] for f in p["files"]}
-            files = p["files"] + [f for f in found["files"] if f["url"] not in known]
-            desc = p["description"]
-            if len(found["description"]) > len(desc) + 40:   # the page says more than the list did
-                desc = found["description"]
-            if specs != p["specs"] or files != p["files"] or desc != p["description"]:
-                improved += 1
-                conn.execute("UPDATE catalog_products SET specs = ?, files = ?, description = ? "
-                             "WHERE supplier_id = ? AND id = ?",
-                             (json.dumps(specs[:60]), json.dumps(files[:8]), desc[:4000], supplier_id, p["id"]))
+    updates = []   # written together at the end: never hold the database while reading pages
+    for url, p in own.items():
+        if site.out_of_time():
+            break
+        try:
+            page = site.get(url, limit=3_000_000).decode("utf-8", "replace")
+        except Exception:
+            continue
+        checked += 1
+        found = pagecards.product_specs(url, page)
+        have = {(a.lower(), b.lower()) for a, b in p["specs"]}
+        specs = p["specs"] + [x for x in found["specs"] if (x[0].lower(), x[1].lower()) not in have]
+        known = {f["url"] for f in p["files"]}
+        files = p["files"] + [f for f in found["files"] if f["url"] not in known]
+        desc = p["description"]
+        if len(found["description"]) > len(desc) + 40:   # the page says more than the list did
+            desc = found["description"]
+        if specs != p["specs"] or files != p["files"] or desc != p["description"]:
+            improved += 1
+            updates.append((json.dumps(specs[:60]), json.dumps(files[:8]), desc[:4000], supplier_id, p["id"]))
+    if updates:
+        with db.connect() as conn:
+            conn.executemany("UPDATE catalog_products SET specs = ?, files = ?, description = ? "
+                             "WHERE supplier_id = ? AND id = ?", updates)
     with_specs = sum(1 for p in db.catalog_products(supplier_id, None, "", 100000)[0] if p["specs"] or p["files"])
     return {"checked": checked, "improved": improved, "with_specs": with_specs}
 

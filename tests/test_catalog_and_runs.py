@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -636,3 +637,36 @@ if hang:
     assert wait_for(lambda: db.get_supplier(second)["status"] == "active" and not runner.running(), 30)
     assert db.get_supplier(first)["status"] == "active"
     assert db.analysis()["trigger"] == "continue"
+
+
+def test_photo_check_leaves_the_database_free_while_it_loads_photos(client, monkeypatch):
+    # two catalog copies run side by side; one loading photos for minutes must not lock out the other's save
+    monkeypatch.setenv("ROLODEX_CHECK_PHOTOS", "1")
+    sid = new_supplier()
+    db.save_catalog(sid, {"sections": [], "products": [
+        {"id": "a", "name": "A", "image_url": "https://x.example/broken.jpg", "images": ["https://x.example/good.jpg"]},
+        {"id": "b", "name": "B", "image_url": "https://x.example/good2.jpg"}]})
+    other = new_supplier(company="Other Co")
+
+    def fetch_image(u, w=0):
+        conn = sqlite3.connect(config.DB_PATH, timeout=0.2)   # someone else saving meanwhile
+        try:
+            conn.execute("UPDATE suppliers SET company = company WHERE id = ?", (other,))
+            conn.commit()
+        finally:
+            conn.close()
+        return None if "broken" in u else ("f", "image/jpeg")
+    monkeypatch.setattr(images, "fetch_image", fetch_image)
+    res = catalog.check_photos(sid, minutes=1)
+    assert res["broken_replaced"] == 1 and db.catalog_product(sid, "a")["image_url"].endswith("good.jpg")
+
+
+def test_a_run_cut_off_by_the_app_closing_is_picked_up_at_start(client, monkeypatch):
+    sid = new_supplier()
+    db.update_supplier(sid, status="queued", next_check="2026-01-01", progress={"step": 6, "of": 6, "label": "Copying their catalog"})
+    db.update_analysis(state="running", started_at=db.now(), planned=[sid], finished=[], current="Bag Co", pid=999999)
+    started = []
+    monkeypatch.setattr(runner, "start", lambda trigger="button": started.append(trigger) or "")
+    runner.resume_interrupted(delay_seconds=0)
+    assert db.analysis()["state"] == "failed" and db.get_supplier(sid)["progress"] in ("", None, {})
+    assert wait_for(lambda: started == ["resume"], 5)
