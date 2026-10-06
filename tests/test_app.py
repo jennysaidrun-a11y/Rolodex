@@ -394,3 +394,29 @@ def test_download_pdf_rejects_non_pdfs(tmp_path, monkeypatch):
     assert recheck.download_pdf("https://x.example/a.pdf", "a.pdf") == ""
     assert recheck.download_pdf("file:///etc/passwd", "b.pdf") == ""
     assert list(tmp_path.iterdir()) == []
+
+
+def test_phone_access_only_answers_your_tailscale_devices(client, monkeypatch):
+    from rolodex import phone
+    assert phone.is_tailnet("100.101.102.103") and not phone.is_tailnet("192.168.1.20") and not phone.is_tailnet("bad")
+    # Tailscale off or not installed: no phone address, nothing extra listening
+    monkeypatch.setattr(phone, "_tailscale", lambda: "")
+    assert phone.tailscale_ip() == "" and phone.url() == ""
+    # Tailscale on: the app also listens on the 100.x address and shows it on the home page (this computer only)
+    monkeypatch.setattr(phone, "tailscale_ip", lambda: "100.101.102.103")
+    monkeypatch.setattr(phone, "_dns_name", lambda: "ub-pc.tailnet.ts.net")
+    started = []
+    import uvicorn
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self: started.append(self.config.host))
+    monkeypatch.setitem(phone._state, "server", None)
+    phone._start(app_module.app)
+    import time
+    time.sleep(0.2)
+    assert started == ["100.101.102.103"] and phone.url() == "http://ub-pc.tailnet.ts.net:8000"
+    # a request reaching the phone address from outside Tailscale is refused
+    from starlette.testclient import TestClient
+    outsider = TestClient(app_module.app, base_url="http://100.101.102.103:8000", client=("192.168.1.20", 5000))
+    assert outsider.get("/").status_code == 403
+    member = TestClient(app_module.app, base_url="http://100.101.102.103:8000", client=("100.64.1.2", 5000))
+    assert member.get("/").status_code == 200
+    monkeypatch.setitem(phone._state, "server", None)

@@ -24,7 +24,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
 
-from . import claude, config, db, docview, gitsync, present, recheck, runner
+from . import claude, config, db, docview, gitsync, phone, present, recheck, runner
 from .images import fetch_image
 
 HERE = Path(__file__).resolve().parent
@@ -37,6 +37,7 @@ templates.env.globals["use_api"] = config.USE_API
 templates.env.globals["git_sync"] = config.GIT_SYNC
 templates.env.globals["analysis_progress"] = lambda: runner.progress()
 templates.env.globals["sync_status"] = lambda: gitsync.last_result
+templates.env.globals["phone_url"] = lambda: phone.url()
 templates.env.globals["img"] = lambda url, w=400: ("/img?" + urlencode({"u": url, "w": w})) if str(url).lower().startswith(("http://", "https://")) else ""
 templates.env.filters["link"] = lambda u: u if str(u).lower().startswith(("http://", "https://")) else ""
 
@@ -51,6 +52,8 @@ async def lifespan(app: FastAPI):
         runner.start_rechecks()
     if config.GIT_SYNC:
         gitsync.start_background()
+    if config.PHONE_ACCESS:
+        phone.start_background(app)
     if os.environ.get("ROLODEX_CATALOG_COMPLETE", "1") == "1":
         from . import catalog, logos
 
@@ -65,6 +68,15 @@ app = FastAPI(title="Supplier Rolodex", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 OPEN_PATHS = ("/login", "/static/")
+
+
+@app.middleware("http")
+async def only_your_devices(request: Request, call_next):
+    """The phone (Tailscale) address answers only your own Tailscale devices."""
+    ip = phone.phone_server_ip()
+    if ip and (request.scope.get("server") or ("",))[0] == ip and not phone.is_tailnet(request.client.host if request.client else ""):
+        return Response("Not allowed.", status_code=403)
+    return await call_next(request)
 
 
 @app.middleware("http")
