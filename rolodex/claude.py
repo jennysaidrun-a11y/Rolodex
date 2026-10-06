@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from pathlib import Path
 
 try:   # only needed for the API mode; the Claude Code tools use this module's prompts without it
@@ -389,6 +390,73 @@ def product_list(products: list[dict]) -> str:
             row["specs"] = specs[:240]
         rows.append(row)
     return json.dumps(rows, separators=(",", ":"), ensure_ascii=False)
+
+
+# The whole product list outgrew one question (thousands of products). Above this size Ask Claude first
+# picks the catalog sections worth looking in, from a short map of every supplier's sections, then reads
+# only those products (plus any whose words match the request), cut to this size.
+PRODUCT_BUDGET = 240_000   # characters of product_list, about 70k tokens
+_STOP = set("the and for with that this from what who which have has need needs want wants any some our are can you "
+            "your get got one ones use used using like just more less than about into onto over under them they "
+            "their there where when how does did not all its it's i'm we're looking find show give".split())
+
+
+def _terms(text: str) -> list[str]:
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    out = []
+    for w in words:
+        if len(w) < 3 or w in _STOP:
+            continue
+        for suffix in ("ing", "es", "s"):
+            if w.endswith(suffix) and len(w) - len(suffix) >= 3:
+                w = w[: -len(suffix)]
+                break
+        out.append(w)
+    return list(dict.fromkeys(out))
+
+
+def _section_code(p: dict) -> str:
+    return f"{p['supplier_id']}/{p.get('section_id') or ''}"
+
+
+def section_map(products: list[dict]) -> str:
+    """One line per catalog section: its code, the supplier, the section name and how many products,
+    with a few product names so Claude can tell what's in it."""
+    groups: dict[str, list[dict]] = {}
+    for p in products:
+        groups.setdefault(_section_code(p), []).append(p)
+    lines = []
+    for code, ps in groups.items():
+        sample = ", ".join(dict.fromkeys(x["name"][:30] for x in ps[:2]))
+        lines.append(f"{code} | {ps[0]['company']} | {ps[0].get('section') or '(all products)'} | {len(ps)} | {sample}")
+    return "\n".join(lines)
+
+
+def shortlist(request_text: str, products: list[dict], sections: list[str] = ()) -> list[dict]:
+    """The products worth showing Claude for this request, within PRODUCT_BUDGET: products in the
+    picked sections that match the request's words first, then other matches, then the rest of the picked
+    sections."""
+    if len(product_list(products)) <= PRODUCT_BUDGET:
+        return products
+    terms = [re.compile(r"\b" + re.escape(t)) for t in _terms(request_text)]
+    picked = set(sections)
+
+    def score(p: dict) -> int:
+        text = " ".join([p["name"], p.get("section") or "", p.get("company") or "", p.get("sku") or "",
+                         p.get("details") or "", " ".join(f"{a} {b}" for a, b in (p.get("specs") or [])[:8])]).lower()
+        return sum(1 for t in terms if t.search(text))
+    ranked = sorted(((score(p), _section_code(p) in picked, i) for i, p in enumerate(products)),
+                    key=lambda x: (-(x[0] > 0 and x[1]), -x[0], -x[1], x[2]))
+    chosen, size = [], 2
+    for sc, in_picked, i in ranked:
+        if not sc and not in_picked:
+            continue
+        row = len(product_list([products[i]]))
+        if size + row > PRODUCT_BUDGET:
+            break
+        chosen.append(i)
+        size += row + 1
+    return [products[i] for i in sorted(chosen)]
 
 
 def ask_products(question: str, products: list[dict]) -> dict:

@@ -566,7 +566,14 @@ def due_for_recheck() -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM suppliers WHERE status NOT IN ('unread', 'new', 'researching') "
             "AND next_check IS NOT NULL AND next_check <= ? ORDER BY next_check, id", (today,))
-        return [_supplier(r) for r in rows]
+        due = [_supplier(r) for r in rows]
+        # researched over an hour ago, but the run stopped before their catalog was copied (or ruled out)
+        hour_ago = (datetime.now() - timedelta(hours=1)).isoformat(timespec="seconds")
+        unfinished = conn.execute(
+            "SELECT * FROM suppliers WHERE status = 'active' AND last_checked IS NOT NULL AND last_checked < ? "
+            "AND COALESCE(catalog, '') IN ('', '{}') ORDER BY last_checked, id", (hour_ago,))
+        seen = {s["id"] for s in due}
+        return due + [s for s in map(_supplier, unfinished) if s["id"] not in seen]
 
 
 # ---------- product catalogs (a copy of each supplier's own product list) ----------

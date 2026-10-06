@@ -25,8 +25,9 @@ On a Windows PC, `run.bat` does the same through `tools/start_local.py` (localho
   when the app starts died with it: `runner.resume_interrupted` marks it stopped and carries on with the rest.
   Never hold a database transaction open across web fetches (two catalog copies run side by side and the
   other's save fails with "database is locked"): collect updates, then write them in one short transaction. **Ask Claude** also goes through `runner.ask` (directory JSON on stdin), and **Ask Claude**
-  on the Products page (`/products/ask`) through `runner.ask_products` (every catalog product,
-  compact, on stdin; answers with product keys). Both use `config.SEARCH_MODEL` (Sonnet). `api`
+  on the Products page (`/products/ask`) through `runner.ask_products` (the catalog products,
+  compact, on stdin; answers with product keys; once they outgrow `claude.PRODUCT_BUDGET`, `runner.pick_sections`
+  first picks sections from `claude.section_map` and `claude.shortlist` sends only those plus keyword matches). Both use `config.SEARCH_MODEL` (Sonnet). `api`
   mode calls the Claude API from `rolodex/claude.py` instead.
 - Prompts and schemas for reading and research live in `rolodex/claude.py` (`card_prompt`,
   `research_prompt`, `card_schema`, `research_schema`), shared by both modes; saving goes through

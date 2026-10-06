@@ -670,3 +670,35 @@ def test_a_run_cut_off_by_the_app_closing_is_picked_up_at_start(client, monkeypa
     runner.resume_interrupted(delay_seconds=0)
     assert db.analysis()["state"] == "failed" and db.get_supplier(sid)["progress"] in ("", None, {})
     assert wait_for(lambda: started == ["resume"], 5)
+
+
+def test_ask_claude_on_catalogs_too_big_for_one_question(client, tmp_path, monkeypatch):
+    sid = new_supplier()
+    db.save_catalog(sid, {"sections": [{"id": "wrap", "name": "Pallet wrap"}, {"id": "gl", "name": "Gloves"}],
+                          "products": [{"id": "SF-1", "name": "Stretch film 18 in", "section_id": "wrap"}]
+                          + [{"id": f"G-{i}", "name": f"Nitrile glove {i}", "section_id": "gl"} for i in range(300)]})
+    monkeypatch.setattr(app_module.claude, "PRODUCT_BUDGET", 3000)
+    # first Claude picks the sections from a short map, then it reads only those products (within the budget)
+    script = ("import sys, json\n"
+              "text = sys.stdin.read()\n"
+              "if text.startswith('['):\n"
+              "    rows = json.loads(text)\n"
+              "    assert len(text) <= 3000 and any(r['name'].startswith('Stretch film') for r in rows), len(text)\n"
+              f"    answer = {{'answer': 'Stretch film wraps pallets.', 'matches': [{{'key': '{sid}/SF-1', 'why': 'Pallet wrap'}}]}}\n"
+              "else:\n"
+              "    assert 'Pallet wrap' in text and 'Gloves' in text\n"
+              f"    answer = {{'answer': '', 'matches': [{{'key': '{sid}/wrap'}}]}}\n"
+              "print(json.dumps({'result': json.dumps(answer)}))\n")
+    monkeypatch.setattr(config, "CLAUDE_COMMAND", fake_claude(tmp_path, script))
+    page = client.post("/products/ask", data={"question": "something to wrap pallets"}).text
+    assert "Stretch film wraps pallets." in page and f"/supplier/{sid}/catalog/item/SF-1" in page
+
+
+def test_a_supplier_whose_catalog_was_never_copied_stays_waiting(client):
+    sid = new_supplier()
+    db.update_supplier(sid, last_checked=db.now(), next_check="2099-01-01")
+    assert sid not in {s["id"] for s in db.due_for_recheck()}   # its run may still be copying it
+    db.update_supplier(sid, last_checked="2026-01-01T09:00:00")
+    assert sid in {s["id"] for s in db.due_for_recheck()}
+    db.update_supplier(sid, catalog={"note": "No product list online.", "checked_at": db.now()})
+    assert sid not in {s["id"] for s in db.due_for_recheck()}
