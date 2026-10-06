@@ -113,6 +113,9 @@ with a cloud routine doing the analysis (`routine/`). Its suppliers were copied 
    (`tools/start_local.py`) and saves your data to GitHub every few minutes, so download it with
    `git clone` (not a ZIP). Only that computer can open it; set `ROLODEX_HOST=0.0.0.0` to allow
    other devices on the same network. Don't run the Codespace at the same time.
+   **On your phone:** install Tailscale on the PC and the phone (same login). The app then also
+   answers on the PC's Tailscale address (shown on the home page), only for your own Tailscale
+   devices. `ROLODEX_PHONE=0` turns it off.
    The first start also puts a **Supplier Rolodex** icon on the desktop: click it to start the app
    (it opens in its own window, Edge or Chrome app mode; clicking it again while it runs just opens it).
 4. For the analysis, install Claude Code on that computer and sign in (`claude`), or set an

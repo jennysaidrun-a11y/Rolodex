@@ -31,6 +31,8 @@ BACKUP_PATH = DATA_DIR / "rolodex-backup.db"
 
 # Save the data folder to GitHub every few minutes (on in a Codespace; see .devcontainer/).
 GIT_SYNC = os.environ.get("ROLODEX_GIT_SYNC", "1" if os.environ.get("CODESPACES") == "true" else "0") == "1"
+# Also answer on this computer's Tailscale address so your own phone can open the app (rolodex/phone.py).
+PHONE_ACCESS = os.environ.get("ROLODEX_PHONE", "0" if os.environ.get("CODESPACES") == "true" else "1") == "1"
 GIT_SYNC_SECONDS = int(os.environ.get("ROLODEX_GIT_SYNC_SECONDS", "180"))
 
 # One shared password for everyone at the company. The data isn't sensitive, but the
