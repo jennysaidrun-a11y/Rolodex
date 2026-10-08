@@ -21,7 +21,7 @@ from pathlib import Path
 log = logging.getLogger("rolodex.phone")
 TAILNET = [ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48")]
 PORT = int(os.environ.get("PORT", "8000"))
-_state: dict = {"ip": "", "name": "", "server": None}
+_state: dict = {"ip": "", "name": "", "server": None, "thread": None}
 
 
 def _tailscale() -> str:
@@ -81,17 +81,40 @@ def _start(app) -> None:
         return
     import uvicorn
     server = uvicorn.Server(uvicorn.Config(app, host=ip, port=PORT, lifespan="off", log_level="warning"))
-    _state.update(ip=ip, name=_dns_name(), server=server)
-    threading.Thread(target=server.run, name="phone-server", daemon=True).start()
+    thread = threading.Thread(target=server.run, name="phone-server", daemon=True)
+    _state.update(ip=ip, name=_dns_name(), server=server, thread=thread)
+    thread.start()
     log.info("On your phone (Tailscale): %s", url())
 
 
-def start_background(app) -> None:
+def _healthy() -> bool:
+    """The phone listener is up and still on this computer's current Tailscale address. It stops
+    answering if it couldn't bind (Tailscale was still connecting), or if Tailscale reconnected with
+    another address (after sleep, a network change or a Tailscale restart)."""
+    thread = _state["thread"]
+    return bool(thread and thread.is_alive() and tailscale_ip() == _state["ip"])
+
+
+def _stop() -> None:
+    server, thread = _state["server"], _state["thread"]
+    if server:
+        server.should_exit = True
+    if thread and thread.is_alive():
+        thread.join(timeout=10)
+    _state.update(ip="", name="", server=None, thread=None)
+
+
+def start_background(app, every: float = 60) -> None:
+    """Start the phone listener once Tailscale is on, and check it every minute for as long as the app
+    runs: a listener that died or sits on an old address is restarted."""
     def loop():
-        while not _state["server"]:
+        while True:
             try:
+                if _state["server"] and not _healthy():
+                    log.warning("Phone access stopped answering; restarting it")
+                    _stop()
                 _start(app)
             except Exception as e:   # never take the app down over phone access
                 log.warning("Phone access not started: %s", e)
-            time.sleep(60)
+            time.sleep(every)
     threading.Thread(target=loop, name="phone-access", daemon=True).start()
