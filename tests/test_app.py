@@ -420,3 +420,34 @@ def test_phone_access_only_answers_your_tailscale_devices(client, monkeypatch):
     member = TestClient(app_module.app, base_url="http://100.101.102.103:8000", client=("100.64.1.2", 5000))
     assert member.get("/").status_code == 200
     monkeypatch.setitem(phone._state, "server", None)
+
+
+def test_phone_access_restarts_when_it_stops_answering(monkeypatch):
+    # e.g. Tailscale reconnected with a new address after the PC slept: the listener follows it
+    from rolodex import phone
+    import time
+    import uvicorn
+    ip = {"now": "100.64.0.1"}
+    monkeypatch.setattr(phone, "tailscale_ip", lambda: ip["now"])
+    monkeypatch.setattr(phone, "_dns_name", lambda: "")
+    started = []
+
+    def run(self):
+        started.append(self.config.host)
+        while not self.should_exit:
+            time.sleep(0.02)
+    monkeypatch.setattr(uvicorn.Server, "run", run)
+    for k, v in {"server": None, "thread": None, "ip": "", "name": ""}.items():
+        monkeypatch.setitem(phone._state, k, v)
+    phone.start_background(app_module.app, every=0.1)
+    deadline = time.time() + 5
+    while started != ["100.64.0.1"] and time.time() < deadline:
+        time.sleep(0.05)
+    ip["now"] = "100.64.0.2"
+    while started[-1:] != ["100.64.0.2"] and time.time() < deadline:
+        time.sleep(0.05)
+    assert started == ["100.64.0.1", "100.64.0.2"] and phone.url() == "http://100.64.0.2:8000"
+    ip["now"] = ""   # Tailscale off: stop for good
+    while phone._state["server"] and time.time() < deadline:
+        time.sleep(0.05)
+    assert phone.url() == ""
