@@ -451,3 +451,22 @@ def test_phone_access_restarts_when_it_stops_answering(monkeypatch):
     while phone._state["server"] and time.time() < deadline:
         time.sleep(0.05)
     assert phone.url() == ""
+
+
+def test_phone_access_through_tailscale_serve(monkeypatch):
+    # Tailscale itself publishes the app to your devices on https://<pc>.ts.net:8444 (no firewall rule needed)
+    from rolodex import phone
+    calls = []
+
+    class Done:
+        returncode, stdout, stderr = 0, "", ""
+    monkeypatch.setattr(phone, "_tailscale", lambda: "tailscale")
+    monkeypatch.setattr(phone, "_dns_name", lambda: "ub-pc.tailnet.ts.net")
+    monkeypatch.setattr(phone.subprocess, "run", lambda args, **k: calls.append(args) or Done())
+    for k, v in {"server": None, "thread": None, "served": "", "serve_tried": 0.0}.items():
+        monkeypatch.setitem(phone._state, k, v)
+    phone._serve()
+    assert calls == [["tailscale", "serve", "--bg", "--https=8444", "http://127.0.0.1:8000"]]
+    assert phone.url() == "https://ub-pc.tailnet.ts.net:8444"
+    phone._serve()   # once it works, it isn't asked again
+    assert len(calls) == 1
