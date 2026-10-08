@@ -21,7 +21,10 @@ from pathlib import Path
 log = logging.getLogger("rolodex.phone")
 TAILNET = [ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48")]
 PORT = int(os.environ.get("PORT", "8000"))
-_state: dict = {"ip": "", "name": "", "server": None, "thread": None}
+_state: dict = {"ip": "", "name": "", "server": None, "thread": None, "served": "", "serve_tried": 0.0}
+# Tailscale itself answers on this HTTPS port and hands requests to the app on 127.0.0.1, so no firewall
+# rule is needed and it keeps working when Tailscale reconnects (File Filler uses 443).
+SERVE_PORT = int(os.environ.get("ROLODEX_PHONE_PORT", "8444"))
 
 
 def _tailscale() -> str:
@@ -64,6 +67,8 @@ def is_tailnet(addr: str) -> bool:
 
 def url() -> str:
     """The address to open on your phone, or "" while phone access isn't running."""
+    if _state["served"]:
+        return _state["served"]
     if not _state["server"]:
         return ""
     return f"http://{_state['name'] or _state['ip']}:{PORT}"
@@ -85,6 +90,30 @@ def _start(app) -> None:
     _state.update(ip=ip, name=_dns_name(), server=server, thread=thread)
     thread.start()
     log.info("On your phone (Tailscale): %s", url())
+
+
+def _serve() -> None:
+    """Ask Tailscale to publish the app on https://<this computer>.ts.net:SERVE_PORT, to your own devices
+    only (serve, not funnel). Tried once every 10 minutes until it works."""
+    if _state["served"] or time.time() - _state["serve_tried"] < 600:
+        return
+    _state["serve_tried"] = time.time()
+    name = _dns_name()
+    if not name:
+        return
+    exe = _tailscale()
+    try:
+        r = subprocess.run([exe, "serve", "--bg", f"--https={SERVE_PORT}", f"http://127.0.0.1:{PORT}"],
+                           capture_output=True, text=True, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError) as e:
+        log.warning("Tailscale serve not started: %s", e)
+        return
+    if r.returncode == 0:
+        _state["served"] = f"https://{name}:{SERVE_PORT}"
+        log.info("On your phone (Tailscale): %s", _state["served"])
+    else:
+        log.warning("Tailscale serve not started: %s", (r.stderr or r.stdout).strip()[:300])
 
 
 def _healthy() -> bool:
@@ -114,6 +143,7 @@ def start_background(app, every: float = 60) -> None:
                     log.warning("Phone access stopped answering; restarting it")
                     _stop()
                 _start(app)
+                _serve()
             except Exception as e:   # never take the app down over phone access
                 log.warning("Phone access not started: %s", e)
             time.sleep(every)
