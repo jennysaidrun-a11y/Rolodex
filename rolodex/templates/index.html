@@ -118,6 +118,7 @@
       {% if s.status == "closed" %}<span class="tag warn">Closed</span>{% endif %}
       {% if s.status == "new" %}<span class="tag">Not reviewed</span>{% endif %}
       <span class="muted">{{ s.categories|join(", ") }}{% if s.last_checked %} · scanned {{ s.last_checked[:10] }}{% endif %}</span>
+      {% if s.contact_name or s.phone or s.email %}<span class="muted contact-line">{% if s.contact_name %}{{ s.contact_name }}{% endif %}{% if s.phone %} · {{ s.phone.split(" / ")[0] }}{% endif %}{% if s.email %} · {{ s.email }}{% endif %}</span>{% endif %}
       {% if s.summary %}<span class="summary">{{ s.summary }}</span>{% endif %}
       {% if s.all_tags %}<span class="mini-tags">{% for t in s.all_tags[:8] %}<span class="mini">{{ t.name }}</span>{% endfor %}{% if s.all_tags|length > 8 %}<span class="muted">+{{ s.all_tags|length - 8 }}</span>{% endif %}</span>{% endif %}
       </span>
