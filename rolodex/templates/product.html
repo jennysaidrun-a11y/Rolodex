@@ -46,8 +46,12 @@
         <td><a class="btn small" href="/supplier/{{ s.id }}/doc/{{ d.index }}?p={{ p.id|urlencode }}">View</a></td></tr>{% endfor %}</tbody>
     </table></div>
     {% endif %}
-    <p>{% if p.page_url|link %}<a class="btn" href="{{ p.page_url|link }}" target="_blank" rel="noopener">View on their website</a>{% endif %}
-      {% if s.phone %}<a class="btn ghost" href="tel:{{ s.phone.split(' / ')[0] }}">Call {{ s.contact_name or s.company }}</a>{% endif %}</p>
+    {% if s.contact_name or s.phone or s.email %}
+    <p class="contact-inline">{% if s.contact_name %}{{ s.contact_name }}{% if s.contact_title %}, {{ s.contact_title }}{% endif %}<br>{% endif %}
+      {% if s.phone %}{% for n in s.phone.split(" / ") %}<a href="tel:{{ n }}">{{ n }}</a>{% if not loop.last %} / {% endif %}{% endfor %}{% endif %}
+      {% if s.email %}<br><a href="mailto:{{ s.email }}">{{ s.email }}</a>{% endif %}</p>
+    {% endif %}
+    <p>{% if p.page_url|link %}<a class="btn" href="{{ p.page_url|link }}" target="_blank" rel="noopener">View on their website</a>{% endif %}</p>
     <p class="prevnext">{% if prev_id %}<a href="/supplier/{{ s.id }}/catalog/item/{{ prev_id|urlencode }}">‹ Previous item</a>{% endif %}
       {% if next_id %}<a href="/supplier/{{ s.id }}/catalog/item/{{ next_id|urlencode }}">Next item ›</a>{% endif %}</p>
   </div>
