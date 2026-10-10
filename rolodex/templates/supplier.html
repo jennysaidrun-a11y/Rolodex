@@ -47,7 +47,7 @@
 
   <dl class="contact">
     {% if s.contact_name %}<dt>Contact</dt><dd>{{ s.contact_name }}{% if s.contact_title %}, {{ s.contact_title }}{% endif %}</dd>{% endif %}
-    {% if s.phone %}<dt>Phone</dt><dd>{% for n in s.phone.split(" / ") %}<a href="tel:{{ n }}">{{ n }}</a>{% if not loop.last %} / {% endif %}{% endfor %}</dd>{% endif %}
+    {% if s.phone %}<dt>Phone</dt><dd>{% for n in s.phone.split(" / ") %}{% if n.startswith("Fax") %}{{ n }}{% else %}<a href="tel:{{ n }}">{{ n }}</a>{% endif %}{% if not loop.last %} / {% endif %}{% endfor %}</dd>{% endif %}
     {% if s.email %}<dt>Email</dt><dd><a href="mailto:{{ s.email }}">{{ s.email }}</a></dd>{% endif %}
     {% if s.website %}<dt>Website</dt><dd><a href="{{ (s.website if '://' in s.website else 'https://' ~ s.website)|link }}" target="_blank" rel="noopener">{{ s.website }}</a></dd>{% endif %}
     {% if s.address %}<dt>Address</dt><dd>{{ s.address }}</dd>{% endif %}

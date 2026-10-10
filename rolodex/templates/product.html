@@ -48,7 +48,7 @@
     {% endif %}
     {% if s.contact_name or s.phone or s.email %}
     <p class="contact-inline">{% if s.contact_name %}{{ s.contact_name }}{% if s.contact_title %}, {{ s.contact_title }}{% endif %}<br>{% endif %}
-      {% if s.phone %}{% for n in s.phone.split(" / ") %}<a href="tel:{{ n }}">{{ n }}</a>{% if not loop.last %} / {% endif %}{% endfor %}{% endif %}
+      {% if s.phone %}{% for n in s.phone.split(" / ") %}{% if n.startswith("Fax") %}{{ n }}{% else %}<a href="tel:{{ n }}">{{ n }}</a>{% endif %}{% if not loop.last %} / {% endif %}{% endfor %}{% endif %}
       {% if s.email %}<br><a href="mailto:{{ s.email }}">{{ s.email }}</a>{% endif %}</p>
     {% endif %}
     <p>{% if p.page_url|link %}<a class="btn" href="{{ p.page_url|link }}" target="_blank" rel="noopener">View on their website</a>{% endif %}</p>
